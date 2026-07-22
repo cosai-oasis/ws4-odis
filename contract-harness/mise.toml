@@ -70,3 +70,43 @@ depends = ["build-vault-plugin"]
 tools = { vault = "latest" }
 run = "bash vault/smoke.sh"
 
+[tasks."tf:lint"]
+description = "Run static checks for the experimental Terraform module"
+dir = "terraform"
+tools = { tfenv = "latest", tflint = "latest", trivy = "latest" }
+run = [
+    "terraform fmt -check -recursive",
+    "terraform init -backend=false -input=false",
+    "terraform validate",
+    "tflint",
+    # --exit-code 1 makes findings (any severity) fail the task; trivy's default
+    # exit code is 0 even when misconfigurations are detected.
+    "trivy config --exit-code 1 .",
+]
+
+[tasks."tf:plan"]
+description = "Initialize and plan the persistent-Vault Terraform resources"
+dir = "terraform"
+tools = { tfenv = "latest" }
+run = [
+    "terraform init -input=false",
+    "terraform plan",
+]
+
+[tasks."tf:apply"]
+description = "Initialize and apply the persistent-Vault non-secret resources (tf:configure-signing is the mandatory follow-up)"
+dir = "terraform"
+tools = { tfenv = "latest" }
+run = [
+    "terraform init -input=false",
+    "terraform apply",
+]
+
+[tasks."tf:configure-signing"]
+description = "Complete the post-apply Vault signing configuration without storing secret_id in Terraform state"
+dir = "terraform"
+tools = { tfenv = "latest", vault = "latest", jq = "latest" }
+# Ordering, not dependency: when scheduled together (mise run tf:apply tf:configure-signing)
+# the signing step waits for apply; running it alone never triggers an apply.
+wait_for = ["tf:apply"]
+run = "bash configure-signing.sh"

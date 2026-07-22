@@ -19,5 +19,9 @@ htmlcov/
 *.tfstate
 *.tfstate.*
 *.tfplan
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+!*.tfvars.json.example
 crash.log
 crash.*.log
