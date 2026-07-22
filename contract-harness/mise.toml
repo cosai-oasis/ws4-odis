@@ -1,5 +1,12 @@
+# mise < 2026.1.6 silently fails to provision a task's own [tasks.*].tools when
+# that task `depends` on another task that has dir + tools (the smoke-vault
+# shape) — the vault binary would simply be missing at run time. The floor turns
+# that into a clear "update mise" error instead.
+min_version = "2026.1.6"
+
 [tools]
-# Core newcomer toolchain for the zero-infrastructure demo.
+# Core newcomer toolchain. Advanced tasks declare their own tools below so a
+# fresh `mise install` stays focused on the zero-infrastructure demo.
 python = "3.12"
 uv = "latest"
 opa = "latest"
@@ -32,6 +39,34 @@ description = "Run ruff lint"
 run = "ruff check src tests"
 
 [tasks.check]
-description = "Run lint + typecheck + tests"
+description = "Run lint + typecheck + tests (Python; check-all adds the Go plugin suite)"
 depends = ["lint", "typecheck", "test"]
+
+[tasks.check-all]
+description = "check plus the Go vault-plugin lint + tests (Go tooling installs on demand)"
+depends = ["check", "lint-vault-plugin", "test-vault-plugin"]
+
+[tasks.build-vault-plugin]
+description = "Build the apf-bundle-issuer Vault plugin binary into vault-plugin/dist/"
+dir = "vault-plugin"
+tools = { go = "1.25" }
+run = "go build -o dist/apf-bundle-issuer ."
+
+[tasks.lint-vault-plugin]
+description = "Run strict golangci-lint on the apf-bundle-issuer Vault plugin"
+dir = "vault-plugin"
+tools = { go = "1.25", golangci-lint = "latest" }
+run = "golangci-lint run"
+
+[tasks.test-vault-plugin]
+description = "Run the Go unit tests for the apf-bundle-issuer Vault plugin"
+dir = "vault-plugin"
+tools = { go = "1.25" }
+run = "go test ./..."
+
+[tasks.smoke-vault]
+description = "Boot dev Vault, provision, issue + offline-verify a bundle (vault auto-provisioned; ODIS_VAULT_BIN overrides)"
+depends = ["build-vault-plugin"]
+tools = { vault = "latest" }
+run = "bash vault/smoke.sh"
 

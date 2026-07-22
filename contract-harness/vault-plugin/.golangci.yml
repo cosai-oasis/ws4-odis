@@ -1,0 +1,47 @@
+# Strict Go linting for the apf-bundle-issuer plugin — the Go parallel to the
+# harness's `ruff select=ALL` + `mypy --strict`. `default: all` turns on every
+# linter; the disable list below is the small, justified set (mirroring how the
+# Python side's select=ALL still ignores D/COM812/ISC001). Every disable names
+# why it beats the alternative; no blanket `//nolint` in source.
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: all
+  disable:
+    - ireturn      # Factory MUST return the logical.Backend interface (Vault SDK contract)
+    - exhaustruct  # framework.Path/FieldSchema have many optional fields; requiring all is noise
+    - depguard     # no import allowlist maintained for this small single-purpose module
+    - varnamelen   # idiomatic Go uses short receiver/loop names (b, p, t)
+    - wsl          # cosmetic whitespace rules; the gofumpt formatter owns layout
+    - wsl_v5       # newer wsl; same rationale
+    - nlreturn     # cosmetic blank-line-before-return; formatter territory
+    - noinlineerr  # `if err := f(); err != nil` is canonical Go (and the Vault SDK's own style)
+    - gomodguard   # no module allow/block policy maintained (same rationale as depguard); also deprecated
+    - nilnil       # Vault read handlers MUST return (nil, nil) for not-found — the SDK's 404 contract
+    - nilerr       # Vault handlers convert client errors to (logical.ErrorResponse, nil) — the SDK's 4xx idiom
+  settings:
+    tagliatelle:
+      case:
+        rules:
+          json: snake # wire format is snake_case (odis.bundle.v1), not camelCase
+    testpackage:
+      # Pure unexported logic (e.g. mapping precedence) needs white-box tests;
+      # those files are named *_internal_test.go and use `package backend`.
+      skip-regexp: _internal_test\.go$
+  exclusions:
+    rules:
+      # Repeated fixture strings in tests are idiomatic, not a DRY smell — the Go
+      # analog of the Python side ignoring PLR2004 in tests.
+      - path: _test\.go$
+        linters:
+          - goconst
+          - wrapcheck # test helpers may return raw external errors for the test to assert on
+          - gosec     # dummy fixture role_id/secret_id values (the Go analog of S105/S106 in tests)
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
