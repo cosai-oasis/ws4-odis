@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apf.local/schemas/odis.audit.event.v1.json",
+  "title": "odis.audit.event.v1",
+  "description": "Common audit event. Mirrors APF §6.5; `event_type` accepts either the APF enum verbatim OR the `odis.<ns>.<name>` extension namespace. Runtime taxonomy enforcement (see audit_taxonomy.is_valid_event_type) is layered on top of the JSON Schema pattern.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "correlation_id",
+    "bundle_id",
+    "bundle_version",
+    "trust_root_id",
+    "policy_digest",
+    "event_id",
+    "timestamp",
+    "event_type",
+    "phase",
+    "apf_semantic_enforcement"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "const": "odis.v1"},
+    "correlation_id": {"type": "string", "format": "uuid"},
+    "bundle_id": {"type": "string", "const": "odis-fixture-bundle"},
+    "bundle_version": {"type": "string", "const": "0.0.0-odis-harness"},
+    "trust_root_id": {"type": "string", "const": "odis-fixture-trust-root"},
+    "policy_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "event_id": {"type": "string", "format": "uuid"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "event_type": {
+      "type": "string",
+      "oneOf": [
+        {
+          "enum": [
+            "policy_load",
+            "policy_reject",
+            "authorize",
+            "deny",
+            "require_review",
+            "review_decision",
+            "credential_issue",
+            "resource_call",
+            "result",
+            "detector_verdict",
+            "quarantine",
+            "stop_session",
+            "revocation",
+            "break_glass"
+          ]
+        },
+        {
+          "type": "string",
+          "pattern": "^odis\\.[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"
+        }
+      ],
+      "description": "APF §6.5 enum OR `odis.<ns>.<name>` extension. Runtime taxonomy check in audit_taxonomy.is_valid_event_type is the authoritative gate."
+    },
+    "phase": {"type": "string", "const": "odis-harness"},
+    "apf_semantic_enforcement": {
+      "type": "boolean",
+      "description": "Sink-derived: true for resource-scoped events (the Tier 3 wedge — every forwarded/refused resource call is APF-semantically enforced). Emitters MUST NOT set this; the sink raises ConformancePostureViolation if they do."
+    },
+    "user_id": {"type": "string", "description": "Optional sponsor identifier (APF §6.5 MUST in source; OPT in ODIS Contract Harness scaffold)."},
+    "reason_code": {"type": "string", "minLength": 1},
+    "result_class": {"type": "string", "minLength": 1},
+    "resource_family": {"type": "string", "minLength": 1},
+    "extra": {
+      "type": "object",
+      "description": "Free-form event-specific payload. Carries tool name, family, endpoint id, decision id, reason code — never provider args or secrets."
+    }
+  }
+}

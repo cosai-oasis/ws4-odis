@@ -1,0 +1,102 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "odis-contract-harness"
+version = "0.0.0"
+description = "ODIS Contract Harness — a runnable prototype of the Passport / Bridge / Router contract surfaces, with APF-shaped policy + audit at the Router boundary"
+readme = "README.md"
+requires-python = ">=3.11,<3.15"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Matthew Gladney", email = "mgladney@nvidia.com" }]
+
+dependencies = [
+    "anyio>=4.13.0",
+    "jsonschema>=4.23",
+    "pyyaml>=6.0.2",
+    "structlog>=25.1",
+    "mcp>=1.27.1",
+    "cryptography>=48.0.0",
+    "pyjwt[crypto]>=2.13.0",
+    "pydantic>=2.0",
+    "httpx>=0.28.1",
+    "starlette>=1.2.0",
+    "typer>=0.12",
+    "uvicorn>=0.48.0",
+]
+
+[project.scripts]
+odis-harness = "odis_harness.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.0",
+    "pytest-asyncio>=0.24",
+    "pytest-socket>=0.7",
+    "pytest-cov>=6.0",
+    "hypothesis>=6.115",
+    "mypy>=1.19.0",
+    "ruff>=0.15.0",
+    "types-pyyaml>=6.0",
+    "types-jsonschema>=4.23",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/odis_harness"]
+
+# -- pytest ------------------------------------------------------------------
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "--strict-markers --strict-config -ra --disable-socket"
+markers = [
+    "integration: integration tests (deselect with '-m \"not integration\"')",
+    "requires_opa: tests that call the real `opa` binary; skipped if not on PATH",
+    "requires_vault: tests that boot a dev-mode `vault` binary; skipped if ODIS_VAULT_BIN/./vault absent",
+]
+
+# -- mypy --------------------------------------------------------------------
+
+[tool.mypy]
+strict = true
+# Pin to the lowest supported version so we catch syntax/stdlib usage
+# that would break the 3.11 row of the CI matrix.
+python_version = "3.11"
+files = ["src/odis_harness"]
+exclude = ["tests/"]
+
+# -- ruff --------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "D",       # docstring rules (opt-in per team)
+    "COM812",  # trailing comma (formatter handles)
+    "ISC001",  # implicit string concat (formatter handles)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "S101",    # assert allowed in tests
+    "S106",    # hardcoded passwords in fixtures
+    "ANN",     # type annotations relaxed in tests
+    "ARG",     # unused args (fixtures)
+    "PLR2004", # magic numbers in test data
+]
+"src/odis_harness/cli/commands.py" = [
+    "B008",    # typer.Option(...) in arg defaults is the Typer idiom
+    "FBT001",  # bool option params are Typer flags, never positional
+    "FBT003",  # bool default to typer.Option(...) is the flag's value
+    "PLR0913", # Typer maps each CLI option to a command parameter (the serve surface)
+]
+
+[tool.ruff.format]
+quote-style = "double"

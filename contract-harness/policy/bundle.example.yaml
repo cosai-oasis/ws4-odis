@@ -1,0 +1,47 @@
+# Canonical example bundle: the default bundle for `mise run demo` and the
+# tests under tests/test_bundle/. Two families with distinct postures:
+# `jira-prod` (strict) and `jira-staging` (permissive).
+
+bundle_id: odis-fixture-bundle
+bundle_version: 0.1.0
+trust_root_id: fixture-trust-root
+
+families:
+  jira-prod:
+    vendor_mcp:
+      endpoint_id: jira-prod-mcp-v1
+      url: https://jira-prod-mcp.internal:8443/
+    policy: |
+      package odis_policy
+
+      # Router input shape (see PolicyEvaluator._request_to_opa_input):
+      #   input.verb         = the bare tool name, e.g. "update_issue"
+      #   input.request_body = the raw MCP tool-call arguments
+      #   input.target_resource.resource_family = the family name
+      # All Jira-specific logic (project = APF) lives here, keeping the
+      # Router generic.
+      default decision := {"decision": "deny", "obligations": {}}
+
+      decision := {"decision": "allow", "obligations": {"allowed_fields": ["labels"]}} if {
+          input.verb == "update_issue"
+          startswith(input.request_body.issue_key, "APF-")
+      }
+    tools:
+      update_issue:
+        action_limits:
+          allowed_fields: [labels]
+    default_mode: strict
+
+  jira-staging:
+    vendor_mcp:
+      endpoint_id: jira-staging-mcp-v1
+      url: https://jira-staging-mcp.internal:8443/
+    policy: |
+      package odis_policy
+
+      default decision := {"decision": "allow", "obligations": {}}
+    tools:
+      update_issue:
+        action_limits:
+          allowed_fields: [labels, summary, description]
+    default_mode: permissive

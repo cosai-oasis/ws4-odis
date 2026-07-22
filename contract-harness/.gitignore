@@ -1,0 +1,23 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.hatch/
+build/
+dist/
+*.egg
+.coverage
+htmlcov/
+.tox/
+.python-version
+
+# Terraform local state / provider cache (never commit these; .terraform.lock.hcl IS tracked)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log

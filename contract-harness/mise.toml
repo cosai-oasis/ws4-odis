@@ -1,0 +1,37 @@
+[tools]
+# Core newcomer toolchain for the zero-infrastructure demo.
+python = "3.12"
+uv = "latest"
+opa = "latest"
+
+[env]
+_.python.venv = { path = ".venv", create = true }
+
+[tasks.install]
+description = "Install project (editable) + dev dependency group into the project venv"
+run = [
+    "uv pip install -e .",
+    "uv pip install --group dev",
+]
+
+[tasks.demo]
+description = "Run the zero-infrastructure Router demo against an in-process Target MCP stub"
+env = { ODIS_AUDIT_OUTPUT = "/tmp/odis-demo-audit.jsonl" }
+run = "odis-harness demo"
+
+[tasks.test]
+description = "Run the pytest suite hermetically"
+run = "pytest"
+
+[tasks.typecheck]
+description = "Run mypy strict on src"
+run = "mypy"
+
+[tasks.lint]
+description = "Run ruff lint"
+run = "ruff check src tests"
+
+[tasks.check]
+description = "Run lint + typecheck + tests"
+depends = ["lint", "typecheck", "test"]
+

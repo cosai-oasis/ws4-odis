@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apf.local/schemas/odis.authz.request.v1.json",
+  "title": "odis.authz.request.v1",
+  "description": "Authorization request submitted to the RPV. Mirrors APF \u00a76.2; built by the MCP adapter from a trusted runtime context plus structured tool arguments. Subject fields come from the runtime context, not from caller-supplied tool args.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "correlation_id",
+    "bundle_id",
+    "bundle_version",
+    "trust_root_id",
+    "policy_digest",
+    "subject",
+    "target_resource",
+    "verb",
+    "request_body",
+    "task_intent",
+    "issued_at",
+    "phase"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "odis.v1"
+    },
+    "correlation_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "bundle_id": {
+      "type": "string",
+      "const": "odis-fixture-bundle"
+    },
+    "bundle_version": {
+      "type": "string",
+      "const": "0.0.0-odis-harness"
+    },
+    "trust_root_id": {
+      "type": "string",
+      "const": "odis-fixture-trust-root"
+    },
+    "policy_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "subject": {
+      "$ref": "#/$defs/Subject"
+    },
+    "target_resource": {
+      "$ref": "#/$defs/ResourceRef"
+    },
+    "verb": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Policy-evaluable action verb, e.g., 'jira.update_issue'."
+    },
+    "request_body": {
+      "type": "object",
+      "description": "Structured tool arguments; provider-shaped after MCP adapter normalization."
+    },
+    "issued_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "phase": {
+      "type": "string",
+      "const": "odis-harness"
+    },
+    "active_verdicts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Detector verdict identifiers in scope at request time. APF \u00a76.2 (MAY); not exercised in ODIS Contract Harness."
+    },
+    "task_intent": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Carried verbatim from runtime context; informational, not policy-evaluable. Preserved on authz.request so audit consumers see the agent stated intent at every decision point."
+    }
+  },
+  "$defs": {
+    "Subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sponsor",
+        "agent"
+      ],
+      "properties": {
+        "sponsor": {
+          "$ref": "#/$defs/Identity"
+        },
+        "agent": {
+          "$ref": "#/$defs/Identity"
+        },
+        "delegation_chain": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Identity"
+          },
+          "description": "Parent \u2192 sub-agent attenuation chain; ODIS Exec Summary \u00a7Appendix."
+        }
+      }
+    },
+    "Identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "ResourceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_family"
+      ],
+      "properties": {
+        "resource_family": {
+          "type": "string",
+          "minLength": 1
+        },
+        "instance_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

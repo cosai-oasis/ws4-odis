@@ -1,0 +1,70 @@
+# Example bundle for a read-only GitLab MCP surface.
+# The endpoint below is a fictitious example.com host; point it at your own
+# GitLab MCP server to exercise the read-only path.
+#
+# This family is strict and exposes only read/list GitLab tools. Each tool has
+# no action limits, which means the Router still evaluates policy but does not
+# apply a post-policy argument enforcer.
+
+bundle_id: odis-gitlab-readonly-example
+bundle_version: 0.1.0
+trust_root_id: fixture-trust-root
+
+families:
+  gitlab-readonly:
+    vendor_mcp:
+      endpoint_id: gitlab-readonly
+      url: https://gitlab-mcp.example.com/mcp
+    policy: |
+      package odis_policy
+
+      default decision := {"decision": "deny", "obligations": {}}
+
+      allowed_tools := {
+          "gitlab_health",
+          "gitlab_search_repositories",
+          "gitlab_list_projects",
+          "gitlab_get_project_details",
+          "gitlab_get_repo_tree",
+          "gitlab_get_file_contents",
+          "gitlab_list_commits",
+          "gitlab_get_commit",
+          "gitlab_list_epics",
+          "gitlab_get_epic",
+          "gitlab_list_issues",
+          "gitlab_get_issue",
+          "gitlab_list_merge_requests",
+          "gitlab_get_merge_request",
+          "gitlab_get_merge_request_diffs",
+          "gitlab_list_pipelines_jobs",
+          "gitlab_get_job_log",
+          "gitlab_get_job_log_metadata",
+          "gitlab_get_job_log_paginated",
+          "gitlab_get_pipeline_tree",
+      }
+
+      decision := {"decision": "allow", "obligations": {}} if {
+          allowed_tools[input.verb]
+      }
+    tools:
+      gitlab_health: {}
+      gitlab_search_repositories: {}
+      gitlab_list_projects: {}
+      gitlab_get_project_details: {}
+      gitlab_get_repo_tree: {}
+      gitlab_get_file_contents: {}
+      gitlab_list_commits: {}
+      gitlab_get_commit: {}
+      gitlab_list_epics: {}
+      gitlab_get_epic: {}
+      gitlab_list_issues: {}
+      gitlab_get_issue: {}
+      gitlab_list_merge_requests: {}
+      gitlab_get_merge_request: {}
+      gitlab_get_merge_request_diffs: {}
+      gitlab_list_pipelines_jobs: {}
+      gitlab_get_job_log: {}
+      gitlab_get_job_log_metadata: {}
+      gitlab_get_job_log_paginated: {}
+      gitlab_get_pipeline_tree: {}
+    default_mode: strict

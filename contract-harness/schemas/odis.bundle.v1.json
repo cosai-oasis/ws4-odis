@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apf.local/schemas/odis.bundle.v1.json",
+  "title": "ODIS signed bundle (policy + routing co-signed)",
+  "type": "object",
+  "required": ["bundle_id", "bundle_version", "trust_root_id", "families"],
+  "additionalProperties": false,
+  "properties": {
+    "bundle_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "bundle_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "trust_root_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "families": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/Family"
+      }
+    }
+  },
+  "$defs": {
+    "Family": {
+      "type": "object",
+      "required": ["vendor_mcp", "policy", "tools", "default_mode"],
+      "additionalProperties": false,
+      "properties": {
+        "vendor_mcp": {
+          "$ref": "#/$defs/VendorMcp"
+        },
+        "policy": {
+          "type": "string",
+          "description": "Rego source for this family's policy. Evaluated by the policy engine (RPV)."
+        },
+        "tools": {
+          "type": "object",
+          "description": "Governed vendor tools. Keyed by tool name without the family prefix; each entry may declare post-policy action limits.",
+          "additionalProperties": {
+            "$ref": "#/$defs/ToolPolicy"
+          }
+        },
+        "default_mode": {
+          "type": "string",
+          "enum": ["strict", "permissive"],
+          "default": "strict",
+          "description": "Behavior when the agent calls a tool the vendor catalog exposes but the bundle does not policy: strict refuses + hides; permissive forwards + audits."
+        }
+      }
+    },
+    "ToolPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action_limits": {
+          "type": "object",
+          "description": "Optional post-policy argument constraints enforced after the policy engine allows the call."
+        }
+      }
+    },
+    "VendorMcp": {
+      "type": "object",
+      "required": ["endpoint_id", "url"],
+      "additionalProperties": false,
+      "properties": {
+        "endpoint_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "description": "Stable identifier used in audit events. Survives URL changes."
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https?://",
+          "description": "Vendor MCP server URL. HTTP-only (per http-only-transport memory); must begin with http:// or https://."
+        }
+      }
+    }
+  }
+}
