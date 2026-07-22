@@ -1,0 +1,46 @@
+# OpenShell gateway config for the ODIS contract harness OpenShell-gated demo (Docker compute driver).
+#
+# Vendored from OpenShell's deploy/docker so this demo needs NO OpenShell source
+# checkout — only the published gateway image (pulled by docker-compose.yml) and the
+# `openshell` CLI (installed via mise: `pipx:openshell`).
+#
+# Linux note: the sandbox->gateway callback uses host.openshell.internal, which is
+# added to the gateway container via `extra_hosts` in docker-compose.yml.
+
+[openshell]
+version = 1
+
+[openshell.gateway]
+# Keep the unauthenticated local-dev gateway on loopback. The Docker driver adds
+# a bridge listener automatically so sandbox callbacks can still reach it.
+bind_address        = "127.0.0.1:8080"
+health_bind_address = "127.0.0.1:8081"
+log_level           = "info"
+compute_drivers     = ["docker"]
+disable_tls         = true
+
+# Sandbox JWT signing key — the Docker driver mints supervisor<->gateway JWTs and
+# REQUIRES this. Generated locally by setup.sh and gitignored (jwt-signing.pem is a
+# private key — never commit it):
+#   openssl genpkey -algorithm ed25519 -out jwt-signing.pem
+[openshell.gateway.gateway_jwt]
+signing_key_path = "/etc/openshell/jwt-signing.pem"
+public_key_path  = "/etc/openshell/jwt-public.pem"
+kid_path         = "/etc/openshell/jwt-kid"
+
+# Local-dev escape hatch: accept unauthenticated CLI/SDK calls as a single local
+# developer. This is for a throwaway local demo gateway ONLY — never enable it on a
+# shared or production gateway (it disables user authentication entirely).
+[openshell.gateway.auth]
+allow_unauthenticated_users = true
+
+[openshell.drivers.docker]
+# Image pulled for `openshell sandbox create` when no --from is given.
+default_image     = "ghcr.io/nvidia/openshell-community/sandboxes/base:latest"
+# Supervisor image the openshell-sandbox binary is extracted from on first start.
+supervisor_image  = "ghcr.io/nvidia/openshell/supervisor:latest"
+image_pull_policy = "IfNotPresent"
+sandbox_namespace = "openshell"
+# Callback endpoint injected into sandbox containers (host gets rewritten to
+# host.openshell.internal, port to the gateway's bind port).
+grpc_endpoint     = "http://host.openshell.internal:8080"

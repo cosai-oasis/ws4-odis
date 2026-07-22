@@ -36,7 +36,7 @@ run = "mypy"
 
 [tasks.lint]
 description = "Run ruff lint"
-run = "ruff check src tests"
+run = "ruff check src tests examples"
 
 [tasks.check]
 description = "Run lint + typecheck + tests (Python; check-all adds the Go plugin suite)"
@@ -110,3 +110,22 @@ tools = { tfenv = "latest", vault = "latest", jq = "latest" }
 # the signing step waits for apply; running it alone never triggers an apply.
 wait_for = ["tf:apply"]
 run = "bash configure-signing.sh"
+
+[tasks.demo-openshell]
+description = "OpenShell-gated demo: agent inside a REAL OpenShell sandbox → Router gate → vendor (egress enforced). Needs the gateway up first: bash examples/openshell-gated-agent/gateway/setup.sh"
+depends = ["build-vault-plugin"]
+tools = { vault = "latest", "pipx:openshell" = "latest" }
+env = { ODIS_AUDIT_OUTPUT = "/tmp/odis-openshell-audit.jsonl" }
+run = "python examples/openshell-gated-agent/openshell_demo.py"
+
+[tasks.openshell-connect]
+description = "Register or select the local OpenShell gateway and show its connection status"
+tools = { "pipx:openshell" = "latest" }
+run = """
+if ! openshell gateway info --gateway odis >/dev/null 2>&1; then
+    openshell gateway add http://localhost:8080 --local --name odis
+fi
+openshell gateway select odis
+openshell status
+"""
+

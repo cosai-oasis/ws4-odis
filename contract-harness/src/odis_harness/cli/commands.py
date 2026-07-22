@@ -5,8 +5,6 @@ the `main` entry point. Router construction lives in `cli.builders`.
 from __future__ import annotations
 
 import asyncio
-import os
-import shutil
 import sys
 from contextlib import ExitStack
 from dataclasses import dataclass
@@ -19,13 +17,15 @@ from odis_harness.audit.banner import print_banner
 from odis_harness.bundle.loader import BundleSchemaInvalid, BundleSignatureInvalid
 from odis_harness.cli.builders import (
     SignedBundleSource,
-    _build_audit,
     _demo_vendor_factory,
-    _http_vendor_factory,
+    audit_stream,
+    build_audit,
     build_router,
     build_router_signed,
+    http_vendor_factory,
     make_fixture_bridged_http_vendor_factory,
     make_oauth2_http_vendor_factory,
+    resolve_opa_binary,
 )
 from odis_harness.mcp_forwarder.oauth import OAuth2InteractiveConfig
 from odis_harness.mcp_forwarder.router import McpRefusal
@@ -37,7 +37,6 @@ _BUNDLE_LOAD_ERRORS = (OSError, BundleSchemaInvalid, BundleSignatureInvalid)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from typing import TextIO
 
     from odis_harness.bundle import Family
     from odis_harness.mcp_forwarder.vendor_client import McpClient
@@ -94,40 +93,13 @@ def _serve_vendor_factory(settings: VendorAuthSettings) -> Callable[[Family], Mc
         return make_fixture_bridged_http_vendor_factory()
     if settings.oauth2:
         return make_oauth2_http_vendor_factory(_oauth2_config(settings))
-    return _http_vendor_factory
+    return http_vendor_factory
 
 
 def _resolve_bundle_path(value: str | None) -> Path:
     if value:
         return Path(value).resolve()
     return (Path.cwd() / "policy" / "bundle.example.yaml").resolve()
-
-
-def _resolve_opa_binary(value: str | None) -> str:
-    if value:
-        return value
-    env = os.environ.get("ODIS_OPA_BIN")
-    if env:
-        return env
-    on_path = shutil.which("opa")
-    if on_path:
-        return on_path
-    sibling = Path(__file__).resolve().parents[4] / "opa"
-    if sibling.is_file() and os.access(sibling, os.X_OK):
-        return str(sibling)
-    return ""
-
-
-def _audit_stream(value: str, stack: ExitStack) -> TextIO:
-    if value == "-":
-        return sys.stdout
-    if value == "stderr":
-        return sys.stderr
-    # Append, never truncate: the audit trail is the governance artifact this
-    # harness exists to preserve — a restart must not wipe prior events.
-    stream = Path(value).open("a", encoding="utf-8", buffering=1)  # noqa: SIM115 - closed via ExitStack
-    stack.callback(stream.close)
-    return stream
 
 
 # -- serve --------------------------------------------------------------------
@@ -138,7 +110,7 @@ def _run_serve(settings: ServeSettings) -> int:
     if auth_error is not None:
         sys.stderr.write(auth_error)
         return 2
-    opa_binary = _resolve_opa_binary(settings.opa_binary)
+    opa_binary = resolve_opa_binary(settings.opa_binary)
     if not opa_binary:
         sys.stderr.write("ERROR: no opa binary found. Set ODIS_OPA_BIN or place 'opa' on PATH.\n")
         return 2
@@ -177,12 +149,12 @@ def _serve_local(settings: ServeSettings, opa_binary: str) -> int:
 
     async def _serve() -> int:
         with ExitStack() as stack:
-            audit_stream = _audit_stream(settings.audit_output, stack)
+            stream = audit_stream(settings.audit_output, stack)
             try:
                 router = await build_router(
                     bundle_path=bundle_path,
                     opa_binary=opa_binary,
-                    audit=_build_audit(audit_stream),
+                    audit=build_audit(stream),
                     vendor_client_factory=vendor_client_factory,
                 )
             except _BUNDLE_LOAD_ERRORS as exc:
@@ -257,12 +229,12 @@ def _serve_signed(settings: ServeSettings, opa_binary: str) -> int:
 
     async def _serve() -> int:
         with ExitStack() as stack:
-            audit_stream = _audit_stream(settings.audit_output, stack)
+            stream = audit_stream(settings.audit_output, stack)
             try:
                 router = await build_router_signed(
                     source=source,
                     opa_binary=opa_binary,
-                    audit=_build_audit(audit_stream),
+                    audit=build_audit(stream),
                     vendor_client_factory=vendor_client_factory,
                 )
             except (
@@ -323,19 +295,19 @@ _DEMO_SCENARIOS: list[tuple[str, str, str, dict[str, object], str]] = [
 
 def _run_demo(settings: DemoSettings) -> int:
     bundle_path = _resolve_bundle_path(settings.bundle)
-    opa_binary = _resolve_opa_binary(settings.opa_binary)
+    opa_binary = resolve_opa_binary(settings.opa_binary)
     if not opa_binary:
         sys.stderr.write("ERROR: no opa binary found. Set ODIS_OPA_BIN or place 'opa' on PATH.\n")
         return 2
 
     async def _demo() -> int:
         with ExitStack() as stack:
-            audit_stream = _audit_stream(settings.audit_output, stack)
+            stream = audit_stream(settings.audit_output, stack)
             try:
                 router = await build_router(
                     bundle_path=bundle_path,
                     opa_binary=opa_binary,
-                    audit=_build_audit(audit_stream),
+                    audit=build_audit(stream),
                     vendor_client_factory=_demo_vendor_factory,
                 )
             except _BUNDLE_LOAD_ERRORS as exc:

@@ -9,6 +9,9 @@ the tests, and the example all share.
 from __future__ import annotations
 
 import asyncio
+import os
+import shutil
+import sys
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -42,6 +45,7 @@ from odis_harness.substrate.fixtures import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
+    from contextlib import ExitStack
     from typing import TextIO
 
     from odis_harness.bridge import TokenExchanger
@@ -65,8 +69,41 @@ def _schemas_dir() -> Path:
     return candidates[-1]
 
 
-def _build_audit(output: TextIO) -> AuditSink:
+def build_audit(output: TextIO) -> AuditSink:
+    """An AuditSink writing schema-validated JSONL events to `output`."""
     return AuditSink(output=output, validator=EnvelopeValidator(_schemas_dir()))
+
+
+def resolve_opa_binary(value: str | None) -> str:
+    """Resolve the opa binary: explicit value, ODIS_OPA_BIN, PATH, or a sibling
+    `opa` one level above the harness directory. Returns "" when none resolves,
+    so callers can fail (or SKIP) with a clear preflight message."""
+    if value:
+        return value
+    env = os.environ.get("ODIS_OPA_BIN")
+    if env:
+        return env
+    on_path = shutil.which("opa")
+    if on_path:
+        return on_path
+    sibling = Path(__file__).resolve().parents[4] / "opa"
+    if sibling.is_file() and os.access(sibling, os.X_OK):
+        return str(sibling)
+    return ""
+
+
+def audit_stream(value: str, stack: ExitStack) -> TextIO:
+    """The audit output stream for `value`: "-" = stdout, "stderr" = stderr, else
+    a file path opened line-buffered for APPEND (never truncate: the audit trail
+    is the governance artifact this harness exists to preserve) and closed via
+    `stack`."""
+    if value == "-":
+        return sys.stdout
+    if value == "stderr":
+        return sys.stderr
+    stream = Path(value).open("a", encoding="utf-8", buffering=1)  # noqa: SIM115 - closed via ExitStack
+    stack.callback(stream.close)
+    return stream
 
 
 async def build_router(
@@ -234,7 +271,7 @@ async def build_router_signed(
     )
 
 
-def _http_vendor_factory(family: Family) -> McpClient:
+def http_vendor_factory(family: Family) -> McpClient:
     # No Router→vendor credential in the harness (Secret-Zero): `auth`
     # stays None. Production constructs a short-lived, audience-scoped provider here
     # — for live smoke tests, the SDK OAuth authorization-code/PKCE provider;
@@ -357,11 +394,15 @@ def _demo_vendor_factory(family: Family) -> McpClient:
 
 __all__ = [
     "SignedBundleSource",
+    "audit_stream",
+    "build_audit",
     "build_router",
     "build_router_from_bundle",
     "build_router_signed",
     "establish_leg2_sessions",
+    "http_vendor_factory",
     "make_bridged_http_vendor_factory",
     "make_fixture_bridged_http_vendor_factory",
     "make_oauth2_http_vendor_factory",
+    "resolve_opa_binary",
 ]

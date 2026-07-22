@@ -1,0 +1,4 @@
+# Generated gateway JWT signing material — never commit (jwt-signing.pem is a private key).
+jwt-signing.pem
+jwt-public.pem
+jwt-kid

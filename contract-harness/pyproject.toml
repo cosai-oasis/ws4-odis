@@ -84,6 +84,10 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+"examples/**/*.py" = [
+    "T201",   # demo scripts narrate to stdout; the sandboxed agent's prints ARE its output channel
+    "INP001", # standalone example scripts, not a package
+]
 "tests/**/*.py" = [
     "S101",    # assert allowed in tests
     "S106",    # hardcoded passwords in fixtures

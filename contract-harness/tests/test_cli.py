@@ -63,7 +63,7 @@ def test_demo_exits_non_zero_when_opa_missing(
 ) -> None:
     monkeypatch.delenv("ODIS_OPA_BIN", raising=False)
     monkeypatch.setattr("shutil.which", lambda _: None)
-    monkeypatch.setattr("odis_harness.cli.commands._resolve_opa_binary", lambda _value: "")
+    monkeypatch.setattr("odis_harness.cli.commands.resolve_opa_binary", lambda _value: "")
     exit_code, _, stderr = _run(
         capsys,
         "demo",
@@ -319,7 +319,7 @@ def test_serve_signed_fails_closed_without_vault_config(
 ) -> None:
     """serve --signed with no Vault config exits 2 before serving (fail closed)."""
     monkeypatch.setattr(
-        "odis_harness.cli.commands._resolve_opa_binary", lambda _value: "/usr/bin/opa"
+        "odis_harness.cli.commands.resolve_opa_binary", lambda _value: "/usr/bin/opa"
     )
     for var in ("ODIS_VAULT_ADDR", "ODIS_VAULT_JWT_FILE", "ODIS_BUNDLE_PUBKEY_FILE"):
         monkeypatch.delenv(var, raising=False)
@@ -350,7 +350,7 @@ def test_serve_signed_fails_closed_on_non_ascii_input_file(
 ) -> None:
     """A non-ASCII JWT/pubkey file exits 2 cleanly (UnicodeDecodeError caught), not a traceback."""
     monkeypatch.setattr(
-        "odis_harness.cli.commands._resolve_opa_binary", lambda _value: "/usr/bin/opa"
+        "odis_harness.cli.commands.resolve_opa_binary", lambda _value: "/usr/bin/opa"
     )
     jwt_file = tmp_path / "jwt"
     jwt_file.write_bytes(b"\xff\xfe not ascii")
