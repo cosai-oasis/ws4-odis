@@ -14,3 +14,7 @@ ODIS defines an open, vendor-neutral architecture for establishing cryptographic
 ODIS addresses four foundational pillars of agentic identity: delegated user identity, agent code or package identity, agent runtime instance identity, and cascaded multi-agent delegation. The architecture is organized as three implementation layers: Passport, Bridge, and Router.
 
 This specification is designed for adoption by identity providers, cloud platforms, agent-framework developers, and enterprise security teams. Conformance profiles allow incremental adoption.
+
+## In this repository
+
+- [`contract-harness/`](contract-harness/) — a runnable, 100%-open-source candidate implementation of the ODIS Router / governance-checkpoint wedge (an MCP policy-forwarder gated by OPA policy, with an optional Vault-signed bundle-issuance path), contributed as a technical demonstration.
