@@ -18,6 +18,12 @@ families:
       #   input.verb         = the bare tool name, e.g. "update_issue"
       #   input.request_body = the raw MCP tool-call arguments
       #   input.target_resource.resource_family = the family name
+      #   input.subject      = Router-produced identity:
+      #                        {sponsor: {id, type}, agent: {id, type}}
+      #   input.issued_at    = Router-stamped RFC 3339 request time
+      #   input.task_intent, input.correlation_id
+      # `subject` and `issued_at` come from the Router's identity providers,
+      # never from the agent, so policies may rely on them.
       # All Jira-specific logic (project = APF) lives here, keeping the
       # Router generic.
       default decision := {"decision": "deny", "obligations": {}}

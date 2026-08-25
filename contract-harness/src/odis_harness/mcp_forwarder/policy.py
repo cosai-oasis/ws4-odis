@@ -108,16 +108,24 @@ class PolicyEvaluator:
 
 
 def _request_to_opa_input(request: AuthzRequest) -> dict[str, Any]:
-    """Minimal projection of AuthzRequest into the OPA input document.
+    """Projection of AuthzRequest into the OPA input document.
 
-    This is the policy input contract for per-family Rego: `verb`,
-    `target_resource`, `request_body`, `task_intent`, and `correlation_id`.
+    The policy input contract for per-family Rego: `subject`, `verb`,
+    `target_resource`, `request_body`, `task_intent`, `issued_at`, and
+    `correlation_id`.
+
+    `subject` and `issued_at` are Router-produced rather than agent-supplied —
+    the sponsor comes from the sponsor provider and `issued_at` is stamped by
+    `RuntimeContextFactory`. Projecting them is what lets a policy gate on who
+    is acting, and when, instead of on the request body alone.
     """
     return {
+        "subject": dict(request.subject),
         "verb": request.verb,
         "target_resource": dict(request.target_resource),
         "request_body": dict(request.request_body),
         "task_intent": request.task_intent,
+        "issued_at": request.issued_at,
         "correlation_id": request.correlation_id,
     }
 
