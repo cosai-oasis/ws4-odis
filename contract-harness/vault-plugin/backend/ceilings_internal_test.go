@@ -158,7 +158,7 @@ func TestApplyCeilingDropsDisallowedFamilies(t *testing.T) {
 	g := grant{
 		TrustRootID: "tr",
 		Families: map[string]grantFamily{
-			"jira-prod": {DefaultMode: "permissive", Policy: policydsl.PolicySpec{Rules: []policydsl.Rule{
+			"jira-prod": {DefaultMode: modePermissive, Policy: policydsl.PolicySpec{Rules: []policydsl.Rule{
 				{Verb: "update_issue", AllowFields: []string{"labels", "summary"}},
 			}}},
 			"github": {},
@@ -181,7 +181,7 @@ func TestApplyCeilingDropsDisallowedFamilies(t *testing.T) {
 		t.Error("ceiling did not drop the non-permitted github family")
 	}
 	// A ceiling-bounded family must never permissively forward unpoliced tools.
-	if capped.DefaultMode != "strict" {
+	if capped.DefaultMode != modeStrict {
 		t.Errorf("kept family default_mode = %q, want strict", capped.DefaultMode)
 	}
 	if len(capped.Policy.Rules) != 1 {
@@ -201,7 +201,7 @@ func TestApplyCeilingDropsFamilyCappedToZeroRules(t *testing.T) {
 	g := grant{
 		TrustRootID: "tr",
 		Families: map[string]grantFamily{
-			"jira-prod": {DefaultMode: "permissive", Policy: policydsl.PolicySpec{Rules: []policydsl.Rule{
+			"jira-prod": {DefaultMode: modePermissive, Policy: policydsl.PolicySpec{Rules: []policydsl.Rule{
 				{Verb: "update_issue", AllowFields: []string{"labels"}},
 			}}},
 		},

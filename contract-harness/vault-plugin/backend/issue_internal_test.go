@@ -39,10 +39,14 @@ func newIssueTestBackend(t *testing.T, signer Signer) (*backend, logical.Storage
 func storeMapping(t *testing.T, s logical.Storage) {
 	t.Helper()
 	entry := mappingEntry{
-		Name:           "jira",
-		BoundIssuer:    testJWTIssuer,
-		BoundAudiences: []string{testJWTAudience},
-		BoundSubject:   testJWTSubject,
+		Name:                "jira",
+		BoundIssuer:         testJWTIssuer,
+		BoundAudiences:      []string{testJWTAudience},
+		BoundSubject:        testJWTSubject,
+		DelegatingPrincipal: testPrincipal,
+		LifecycleState:      lifecycleActive,
+		RecordVersion:       1,
+		GrantTTLSeconds:     int(defaultGrantTTL.Seconds()),
 		Grant: grant{
 			BundleID:      "odis-fixture-bundle",
 			BundleVersion: "0.1.0",
@@ -52,11 +56,12 @@ func storeMapping(t *testing.T, s logical.Storage) {
 					VendorMCP: apfbundle.VendorMCP{
 						EndpointID: "jira-prod-mcp-v1",
 						URL:        "https://jira-prod-mcp.internal:8443/",
+						EgressMode: apfbundle.EgressModeBridge,
 					},
 					Policy: policydsl.PolicySpec{Rules: []policydsl.Rule{
 						{Verb: "update_issue", AllowFields: []string{"labels"}},
 					}},
-					DefaultMode: "strict",
+					DefaultMode: modeStrict,
 				},
 			},
 		},
@@ -178,14 +183,20 @@ func TestHandleIssueNoMappingMatch(t *testing.T) {
 func storeCollidingMappings(t *testing.T, s logical.Storage) {
 	t.Helper()
 	fam := grantFamily{
-		VendorMCP:   apfbundle.VendorMCP{EndpointID: "e", URL: "https://v/"},
+		VendorMCP: apfbundle.VendorMCP{
+			EndpointID: "e", URL: "https://v/", EgressMode: apfbundle.EgressModeBridge,
+		},
 		Policy:      policydsl.PolicySpec{Rules: []policydsl.Rule{{Verb: "update_issue", AllowFields: []string{"labels"}}}},
-		DefaultMode: "strict",
+		DefaultMode: modeStrict,
 	}
 	for _, name := range []string{"a", "b"} {
 		entry := mappingEntry{
-			Name:         name,
-			BoundSubject: testJWTSubject,
+			Name:                name,
+			BoundSubject:        testJWTSubject,
+			DelegatingPrincipal: testPrincipal,
+			LifecycleState:      lifecycleActive,
+			RecordVersion:       1,
+			GrantTTLSeconds:     int(defaultGrantTTL.Seconds()),
 			Grant: grant{
 				BundleID: "b", BundleVersion: "1", TrustRootID: "r",
 				Families: map[string]grantFamily{"jira-prod": fam},

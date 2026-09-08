@@ -2,6 +2,7 @@ package backend
 
 import (
 	"encoding/json"
+	"errors"
 	"odis-contract-harness/vault-plugin/internal/apfbundle"
 	"testing"
 )
@@ -10,9 +11,18 @@ import (
 
 func assembleTestBundle() apfbundle.Bundle {
 	return apfbundle.Bundle{
-		BundleID:      "odis-fixture-bundle",
-		BundleVersion: "0.1.0",
-		TrustRootID:   "fixture-trust-root",
+		BundleID:             "odis-fixture-bundle",
+		BundleVersion:        "0.1.0",
+		TrustRootID:          "fixture-trust-root",
+		Actor:                "spiffe://example.org/agent/jira",
+		OriginatingPrincipal: "vault:entity:e-platform",
+		ContributingRecords: []apfbundle.MappingRecordRef{
+			{Name: "jira", Version: 1, Digest: "sha256:x"},
+		},
+		DelegationChain:       apfbundle.RootDelegationChain(),
+		AttenuationProfileRef: &apfbundle.AttenuationProfileRef{URI: "urn:x:v1", Digest: "sha256:y"},
+		IssuedAt:              "2026-08-27T12:00:00Z",
+		ExpiresAt:             "2026-08-27T13:00:00Z",
 		Families: map[string]apfbundle.Family{
 			"jira-prod": {
 				VendorMCP: apfbundle.VendorMCP{
@@ -20,7 +30,7 @@ func assembleTestBundle() apfbundle.Bundle {
 					URL:        "https://jira-prod-mcp.internal:8443/",
 				},
 				Policy:      "package odis_policy",
-				DefaultMode: "strict",
+				DefaultMode: modeStrict,
 			},
 		},
 	}
@@ -61,5 +71,31 @@ func TestAssembleBundleZeroFamilies(t *testing.T) {
 
 	if _, err := assembleBundle(apfbundle.Bundle{BundleID: "x"}); err == nil {
 		t.Error("expected an error for a bundle with zero families")
+	}
+}
+
+// A bundle missing any part of its delegation record is never signed: the signing
+// seam is the last place to catch an unstamped grant, which would be immortal and
+// name nobody accountable (ODIS-L2-05 / L3-04).
+func TestAssembleBundleRejectsUnstampedDelegation(t *testing.T) {
+	t.Parallel()
+
+	strip := map[string]func(*apfbundle.Bundle){
+		"actor":                 func(b *apfbundle.Bundle) { b.Actor = "" },
+		"originating_principal": func(b *apfbundle.Bundle) { b.OriginatingPrincipal = "" },
+		"contributing_records":  func(b *apfbundle.Bundle) { b.ContributingRecords = nil },
+		"empty contributing records": func(b *apfbundle.Bundle) {
+			b.ContributingRecords = []apfbundle.MappingRecordRef{}
+		},
+		"attenuation_profile_ref": func(b *apfbundle.Bundle) { b.AttenuationProfileRef = nil },
+		"issued_at":               func(b *apfbundle.Bundle) { b.IssuedAt = "" },
+		"expires_at":              func(b *apfbundle.Bundle) { b.ExpiresAt = "" },
+	}
+	for name, mutate := range strip {
+		bundle := assembleTestBundle()
+		mutate(&bundle)
+		if _, err := assembleBundle(bundle); !errors.Is(err, errUnstampedBundle) {
+			t.Errorf("missing %s: got err %v, want errUnstampedBundle", name, err)
+		}
 	}
 }

@@ -21,7 +21,14 @@ import sys
 
 # Defaults match the demo orchestration. host.openshell.internal is injected into the
 # sandbox by the OpenShell Docker driver and resolves to the host (docker-bridge gateway).
-ROUTER_URL = os.environ.get("ODIS_ROUTER_URL", "http://host.openshell.internal:8088/mcp")
+#: Trailing slash matters: the Router mounts MCP at `/mcp`, and Starlette answers the
+#: bare path with a 307 to `/mcp/`. Following that redirect means re-POSTing the body
+#: through the egress proxy on every call, which intermittently fails. This script
+#: runs inside the sandbox and cannot import `transports.mcp_url`, so it states the
+#: same path literally.
+ROUTER_URL = os.environ.get(
+    "ODIS_ROUTER_URL", "http://host.openshell.internal:8088/mcp/"
+)
 VENDOR_HOST = os.environ.get("ODIS_VENDOR_HOST", "host.openshell.internal")
 VENDOR_PORT = int(os.environ.get("ODIS_VENDOR_PORT", "8099"))
 
@@ -29,10 +36,18 @@ VENDOR_PORT = int(os.environ.get("ODIS_VENDOR_PORT", "8099"))
 def _direct_vendor_blocked() -> bool:
     """A direct TCP connect to the vendor must FAIL — only the Router is in the allowlist.
 
-    Assumption: the sandbox blocks disallowed egress at connect time (refused/
-    unreachable), which is what the OpenShell Docker driver does. A gateway that
-    instead accepted the TCP handshake and rejected at L7 (403 on CONNECT) would
-    need an HTTP-level probe here rather than a raw socket.
+    OpenShell enforces at two layers, and a raw socket is the right probe for this one.
+    A per-sandbox netns installs an nftables OUTPUT chain that accepts only proxy-bound,
+    loopback, and established traffic and rejects the rest with ICMP port-unreachable — so
+    a socket that bypasses the proxy is refused at connect time. The 403-on-CONNECT this
+    example's `policy.yaml` describes is the *other* layer: it governs proxy-mediated
+    requests, which a raw socket never becomes. Both statements are true; they are not
+    alternatives.
+
+    One caveat that does not change the assertion: nftables installation is best-effort,
+    and without the `nft` binary the failure degrades from an immediate refusal to a
+    timeout. `socket.timeout` is an `OSError` subclass, so this still reports blocked —
+    just more slowly.
     """
     try:
         with socket.create_connection((VENDOR_HOST, VENDOR_PORT), timeout=5):

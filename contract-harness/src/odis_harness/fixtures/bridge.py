@@ -24,14 +24,15 @@ import jwt
 import structlog
 
 from odis_harness.bridge.exchange import ExchangedToken
-from odis_harness.vault.fixtures import FixtureIdentityIssuer
+from odis_harness.fixtures.issuer import FixtureIdentityIssuer
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 _LOG = structlog.get_logger(__name__)
 
-#: Leg-2 tokens are short-lived (REQ-9.2/9.7); 5 min mirrors the workload-JWT TTL.
+#: Leg-2 tokens are short-lived, and re-minted before expiry rather than long-lived;
+#: 5 min mirrors the workload-JWT TTL.
 _LEG2_TTL = timedelta(minutes=5)
 #: The Router is the OAuth client subject of the exchanged token.
 _ROUTER_SUBJECT = "odis-router"
@@ -43,13 +44,13 @@ def _agent_subject(subject_token: str) -> str:
     """Best-effort `sub` from the agent's workload JWT; fall back to a constant.
 
     Signature is not verified here — the fixture only needs the claimed subject to
-    record the `act` delegation shape. A real broker validates the assertion.
+    record the `act` delegation shape. A production broker validates the assertion.
     """
     try:
         claims = jwt.decode(subject_token, options={"verify_signature": False})
     except jwt.PyJWTError:
         # Fail soft to a constant: an undecodable subject still yields a scoped token,
-        # and the broker (not the fixture) is the real validation point.
+        # and the broker (not the fixture) is the validation point.
         _LOG.debug("bridge.subject_token_undecodable")
         return _UNKNOWN_AGENT
     subject = claims.get("sub")
@@ -84,7 +85,7 @@ class FixtureTokenExchanger:
         )
         # Floor expires_at to whole seconds so it equals the JWT's int-second `exp`
         # claim. A sub-second expires_at would let `is_fresh` report fresh ~1s past
-        # the real (floored) token expiry.
+        # the floored token expiry.
         expires_at = datetime.fromtimestamp(int((issued_at + _LEG2_TTL).timestamp()), tz=UTC)
         # Do not log the bearer or the subject token (secrets); audience is non-secret.
         _LOG.debug("bridge.exchanged", audience=audience, act_sub=agent_subject)

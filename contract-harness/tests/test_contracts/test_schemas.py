@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from jsonschema import Draft202012Validator
@@ -52,19 +52,20 @@ _COMMON: dict[str, object] = {
 _EXAMPLES: dict[str, dict[str, object]] = {
     "odis.runtime.context.v1": _COMMON
     | {
-        "sponsor": {"id": "fixture-sponsor", "type": "entra_oidc"},
+        "originating_principal": {"id": "fixture-principal", "type": "entra_oidc"},
         "agent": {"id": "fixture-agent", "type": "fixture_workload_identity"},
         "task_intent": "Add an 'odis-demo' label to APF-123",
-        "target_resource": {"resource_family": "jira", "instance_id": "APF-123"},
+        "target_resource": {"resource_family": "jira"},
         "issued_at": "2026-05-28T00:00:00Z",
     },
     "odis.authz.request.v1": _COMMON
     | {
         "subject": {
-            "sponsor": {"id": "fixture-sponsor", "type": "entra_oidc"},
+            "originating_principal": {"id": "fixture-principal", "type": "entra_oidc"},
             "agent": {"id": "fixture-agent", "type": "fixture_workload_identity"},
+            "delegation_chain": [],
         },
-        "target_resource": {"resource_family": "jira", "instance_id": "APF-123"},
+        "target_resource": {"resource_family": "jira"},
         "verb": "update_issue",
         "request_body": {"issue_key": "APF-123", "fields": {"labels": ["odis-demo"]}},
         "task_intent": "Add an 'odis-demo' label to APF-123",
@@ -95,7 +96,11 @@ def test_schema_is_valid_draft_2020_12(name: str) -> None:
 
 @pytest.mark.parametrize("name", _NAMES)
 def test_schema_id_matches_filename(name: str) -> None:
-    assert _schema(name)["$id"] == f"https://apf.local/schemas/{name}.json"
+    # A URN, not an https URL: nothing is published at a resolvable address and every
+    # `$ref` is local, so a fetchable-looking id would only invite a consumer to try.
+    # The `odis` NID is not IANA-registered; nothing dereferences these, so it is a local
+    # label. Revisit if ODIS is ratified.
+    assert _schema(name)["$id"] == f"urn:odis:contract-harness:schemas:{name}"
 
 
 @pytest.mark.parametrize("name", _NAMES)
@@ -147,19 +152,111 @@ def test_audit_event_rejects_unknown_event_type(event_type: str) -> None:
 # -- authz.request: subject shape ------------------------------------------
 
 _AUTHZ = "odis.authz.request.v1"
+_CONTEXT = "odis.runtime.context.v1"
+
+#: The envelopes on the Router's decision path, where every declared field has a
+#: supplier. `odis.audit.event.v1` is not one: see
+#: `test_total_envelope_declares_no_optional_input`.
+_TOTAL_ENVELOPES = [_AUTHZ, _CONTEXT]
 
 
-def test_authz_request_subject_requires_sponsor_and_agent() -> None:
-    bad = dict(_example(_AUTHZ), subject={"sponsor": {"id": "x", "type": "entra_oidc"}})
+@pytest.mark.parametrize(
+    "missing", ["originating_principal", "agent", "delegation_chain"]
+)
+def test_authz_request_subject_requires_every_member(missing: str) -> None:
+    """The Router supplies all three, so dropping any one fails closed rather than
+    reaching policy with a subject that states less than the Router knows."""
+    subject = {k: v for k, v in _example(_AUTHZ)["subject"].items() if k != missing}
     with pytest.raises(ValidationError):
-        _validator(_schema(_AUTHZ)).validate(bad)
+        _validator(_schema(_AUTHZ)).validate(dict(_example(_AUTHZ), subject=subject))
 
 
-def test_authz_request_subject_accepts_delegation_chain() -> None:
-    extended = dict(_example(_AUTHZ))
-    extended["subject"] = {
-        "sponsor": {"id": "fixture-sponsor", "type": "entra_oidc"},
-        "agent": {"id": "sub-agent", "type": "fixture_workload_identity"},
-        "delegation_chain": [{"id": "parent-agent", "type": "fixture_workload_identity"}],
+def _subject_with_chain(chain: list[object]) -> dict[str, object]:
+    return {
+        "originating_principal": {"id": "fixture-principal", "type": "entra_oidc"},
+        "agent": {"id": "fixture-agent", "type": "fixture_workload_identity"},
+        "delegation_chain": chain,
     }
-    _validator(_schema(_AUTHZ)).validate(extended)
+
+
+def test_authz_request_subject_accepts_a_root_delegation_chain() -> None:
+    """`[]` asserts a root record — one principal-to-agent hop, no sub-delegation
+    (ODIS §6.3: "empty for the root record"). The Router mints exactly that one hop, so
+    the empty array is a value it can state truthfully, where absence states nothing."""
+    _validator(_schema(_AUTHZ)).validate(dict(_example(_AUTHZ), subject=_subject_with_chain([])))
+
+
+def test_authz_request_subject_refuses_a_claimed_delegation_hop() -> None:
+    """A claimed hop is refused rather than accepted unverified.
+
+    §6.3's chain validation requires a verifier to authenticate every issuer,
+    digest-match every `parent_delegation_ref`, and check each record's integrity,
+    freshness and revocation state, failing closed on any that is missing, stale or
+    ambiguous. This harness has no revocation channel (ODIS-L3-04), so it can do none
+    of that. `subject` reaches the policy engine verbatim via
+    `mcp_forwarder.policy._request_to_opa_input`, so a permitted hop would be an
+    unverifiable lineage claim a Rego rule could read and widen a decision on.
+    `odis.bundle.v1` constrains the same field empty for the same reason.
+    """
+    chain = [{"id": "parent-agent", "type": "fixture_workload_identity"}]
+    with pytest.raises(ValidationError):
+        _validator(_schema(_AUTHZ)).validate(
+            dict(_example(_AUTHZ), subject=_subject_with_chain(chain))
+        )
+
+
+def _optional_properties(schema: dict[str, Any]) -> set[str]:
+    """Declared-but-not-required properties, at the top level and inside `$defs`.
+
+    Nested scopes are reported as `$defs/<name>/<property>`, so a failure names the
+    scope it came from rather than a bare property name that could be either.
+    """
+    scopes: list[tuple[str, dict[str, Any]]] = [("", schema)]
+    scopes += [(f"$defs/{n}/", d) for n, d in schema.get("$defs", {}).items()]
+    return {
+        f"{prefix}{name}"
+        for prefix, obj in scopes
+        for name in set(obj.get("properties", {})) - set(obj.get("required", []))
+    }
+
+
+@pytest.mark.parametrize("name", _TOTAL_ENVELOPES)
+def test_total_envelope_declares_no_optional_input(name: str) -> None:
+    """Every property these two envelopes declare is required, at every level, so
+    neither advertises an input the harness has no path to supply.
+
+    They are the decision path: the Router mints a `RuntimeContext` and projects an
+    `AuthzRequest` from it, and it supplies every field of both. `odis.audit.event.v1`
+    is excluded deliberately — its optional fields all have suppliers
+    (`mcp_forwarder/audit.py` sets `user_id` and `extra`; the sink derives
+    `apf_semantic_enforcement`), and a refusal event legitimately carries no
+    `result_class`, so optionality there is a real distinction rather than a dead field.
+
+    This is the guard that keeps the `active_verdicts` class of defect
+    unrepresentable: a declared input with nothing to populate it fails here.
+    """
+    assert _optional_properties(_schema(name)) == set()
+
+
+@pytest.mark.parametrize("name", _TOTAL_ENVELOPES)
+def test_resource_instance_handle_is_rejected_not_ignored(name: str) -> None:
+    """`target_resource` names a resource family and nothing finer.
+
+    At the gate the Router holds a family name and the raw tool arguments, not a
+    resource instance: `mcp_forwarder/identity.py` and `mcp_forwarder/router.py` both
+    build `{"resource_family": ...}`. A provider-shaped handle like a Jira issue key
+    lives in `request_body`, which policy already reads. `additionalProperties: false`
+    on `ResourceRef` means a payload carrying one is rejected rather than ignored.
+    """
+    resource = {"resource_family": "jira", "instance_id": "APF-123"}
+    with pytest.raises(ValidationError):
+        _validator(_schema(name)).validate(dict(_example(name), target_resource=resource))
+
+
+def test_authz_request_rejects_a_detector_verdict_field() -> None:
+    """`additionalProperties: false` — a signal the checkpoint cannot validate has no
+    way through this envelope, so it can never widen a decision (ODIS-L1-12 confirms a
+    signal only when authenticated, integrity-protected, replay-resistant, fresh,
+    from a trusted authority, and correlated to the affected subject)."""
+    with pytest.raises(ValidationError):
+        _validator(_schema(_AUTHZ)).validate(dict(_example(_AUTHZ), active_verdicts=["v-1"]))

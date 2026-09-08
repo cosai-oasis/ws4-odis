@@ -1,8 +1,8 @@
 """BundleLoader — read bytes, verify signature, validate schema, construct `Bundle`.
 
 Signature verification is delegated to the injected `SignatureVerifier` protocol;
-the harness ships a fixture (`FixtureSignatureVerifier`) that accepts any payload.
-Production substitutes a real verifier — the load-path stays the same.
+a non-production stand-in that accepts any payload lives in `odis_harness.fixtures`.
+Production substitutes a verifier — the load-path stays the same.
 
 Schema validation uses Draft 2020-12 against `schemas/odis.bundle.v1.json`.
 Both signature and schema failures are terminal: typed exceptions surface to
@@ -13,16 +13,24 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 import yaml
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
-from odis_harness.bundle.types import Bundle, Family, ToolPolicy, VendorMcp
+from odis_harness.bundle.types import (
+    AttenuationProfileRef,
+    Bundle,
+    Family,
+    MappingRecordRef,
+    ToolPolicy,
+    VendorMcp,
+)
+from odis_harness.paths import default_schemas_dir
 
 if TYPE_CHECKING:
+    from pathlib import Path
     from typing import Any
 
 
@@ -30,19 +38,11 @@ _SCHEMA_FILENAME = "odis.bundle.v1.json"
 
 
 def _default_schema_path() -> Path:
-    """Locate `odis.bundle.v1.json` via the same fallback strategy as the rest of the harness.
+    """Locate `odis.bundle.v1.json` inside the shared `schemas/` directory.
 
-    Tries: $CWD/schemas, then `<package>/../../../schemas` (source-tree layout).
     Callers that need an explicit path pass `schema_path=` to `BundleLoader`.
     """
-    candidates = [
-        Path.cwd() / "schemas" / _SCHEMA_FILENAME,
-        Path(__file__).resolve().parents[3] / "schemas" / _SCHEMA_FILENAME,
-    ]
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-    return candidates[-1]
+    return default_schemas_dir() / _SCHEMA_FILENAME
 
 
 class BundleSignatureInvalid(RuntimeError):  # noqa: N818 - reads clearer than the Error suffix
@@ -53,28 +53,25 @@ class BundleSchemaInvalid(RuntimeError):  # noqa: N818 - reads clearer than the 
     """The bundle's structure violates the JSON Schema (or the file isn't parseable). Terminal."""
 
 
+class BundleExpired(RuntimeError):  # noqa: N818 - reads clearer than the Error suffix
+    """The grant's validity window has closed, so it confers nothing. Terminal.
+
+    Distinct from a schema or signature failure: the payload is well-formed and
+    authentically signed, it has simply stopped granting anything.
+    """
+
+
 class SignatureVerifier(Protocol):
     """Out-of-scope-but-pluggable.
 
-    The harness ships `FixtureSignatureVerifier`; production substitutes a real
-    implementation that checks against the trust root. The Protocol exists so
-    the load-path can call `.verify(payload, signature)` regardless of the
-    implementation.
+    The caller supplies one — `BundleLoader` has no default, so a load path cannot
+    silently accept an unverified payload. `VaultTransitSignatureVerifier` is the production
+    implementation; `odis_harness.fixtures.signature` holds a non-production stand-in.
+    The Protocol exists so the load path can call `.verify(payload, signature)` without
+    knowing which.
     """
 
     def verify(self, payload: bytes, signature: bytes) -> bool: ...
-
-
-@dataclass(frozen=True, slots=True)
-class FixtureSignatureVerifier:
-    """Always returns True. For tests and local-dev only.
-
-    Production deployments MUST substitute a real `SignatureVerifier` that
-    checks the bundle's signature against the trust root.
-    """
-
-    def verify(self, payload: bytes, signature: bytes) -> bool:  # noqa: ARG002
-        return True
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -91,7 +88,7 @@ class BundleLoader:
         """Read, verify signature, validate against schema, construct `Bundle`.
 
         Filesystem path: read the payload, resolve a sibling `.sig` (out of scope
-        for the fixture path — the fixture verifier accepts any input). A real
+        for the fixture path — the fixture verifier accepts any input). A production
         verifier resolves `bundle_path` → `.sig` and verifies both bytes here.
         """
         payload = bundle_path.read_bytes()
@@ -174,11 +171,16 @@ def _build_bundle(parsed: dict[str, Any]) -> Bundle:
     families: dict[str, Family] = {}
     for name, family_dict in parsed["families"].items():
         vendor_dict = family_dict["vendor_mcp"]
+        vendor_kwargs: dict[str, Any] = {
+            "endpoint_id": vendor_dict["endpoint_id"],
+            "url": vendor_dict["url"],
+        }
+        # Omitted rather than passed as None: the dataclass default is the
+        # declaration a document that names no mode inherits.
+        if "egress_mode" in vendor_dict:
+            vendor_kwargs["egress_mode"] = vendor_dict["egress_mode"]
         families[name] = Family(
-            vendor_mcp=VendorMcp(
-                endpoint_id=vendor_dict["endpoint_id"],
-                url=vendor_dict["url"],
-            ),
+            vendor_mcp=VendorMcp(**vendor_kwargs),
             policy=family_dict["policy"],
             tools={
                 tool_name: ToolPolicy(action_limits=dict(tool_dict.get("action_limits", {})))
@@ -191,13 +193,33 @@ def _build_bundle(parsed: dict[str, Any]) -> Bundle:
         bundle_version=parsed["bundle_version"],
         trust_root_id=parsed["trust_root_id"],
         families=families,
+        actor=parsed.get("actor"),
+        originating_principal=parsed.get("originating_principal"),
+        contributing_records=tuple(
+            MappingRecordRef(name=r["name"], version=r["version"], digest=r["digest"])
+            for r in parsed.get("contributing_records", ())
+        ),
+        # Absent stays None (an unissued grant asserts nothing); a present chain
+        # becomes a tuple, and `Bundle` refuses it if it claims a hop.
+        delegation_chain=(
+            None if (chain := parsed.get("delegation_chain")) is None else tuple(chain)
+        ),
+        attenuation_profile_ref=_build_attenuation_ref(parsed.get("attenuation_profile_ref")),
+        issued_at=parsed.get("issued_at"),
+        expires_at=parsed.get("expires_at"),
     )
 
 
+def _build_attenuation_ref(raw: dict[str, Any] | None) -> AttenuationProfileRef | None:
+    if raw is None:
+        return None
+    return AttenuationProfileRef(uri=raw["uri"], digest=raw["digest"])
+
+
 __all__ = [
+    "BundleExpired",
     "BundleLoader",
     "BundleSchemaInvalid",
     "BundleSignatureInvalid",
-    "FixtureSignatureVerifier",
     "SignatureVerifier",
 ]

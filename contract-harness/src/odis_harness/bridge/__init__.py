@@ -7,22 +7,17 @@ binding). The agent's inbound token is NOT passed through (MCP no-token-passthro
 the leg-2 token is freshly minted/exchanged, distinct from both the caller's token and
 the vendor→provider credential, hydrated at runtime and never persisted.
 
-`exchange` holds the seam (`ExchangedToken`, `TokenExchanger`, `BridgeAuth`);
-`fixtures` holds the in-process stand-in.
+`exchange` holds the seam (`ExchangedToken`, `TokenExchanger`, `BridgeAuth`); `audit`
+holds the ODIS-CC-06 audit anchor for the exchange (`ExchangeAuditAnchor`,
+`CredentialHandle`); `fixtures` holds the in-process stand-in.
 """
 
 from __future__ import annotations
 
 from odis_harness.bridge.exchange import BridgeAuth, ExchangedToken, TokenExchanger
-from odis_harness.bridge.fixtures import (
-    FixtureTokenExchanger,
-    fixture_subject_token_provider,
-)
 
 __all__ = [
     "BridgeAuth",
     "ExchangedToken",
-    "FixtureTokenExchanger",
     "TokenExchanger",
-    "fixture_subject_token_provider",
 ]

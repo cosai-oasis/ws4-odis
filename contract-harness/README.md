@@ -1,7 +1,7 @@
 # ODIS Contract Harness
 
 A runnable, 100%-open-source prototype of an ODIS/APF-style governance checkpoint for
-agent tool calls. An agent calls the Router over MCP; the Router evaluates real Rego with
+agent tool calls. An agent calls the Router over MCP; the Router evaluates Rego with
 OPA, enforces argument-level limits, forwards approved calls to a Target MCP server, and
 audits every outcome.
 
@@ -24,9 +24,9 @@ The harness demonstrates that model at three levels:
 
 | Level | Command | What it proves |
 | --- | --- | --- |
-| Local | `mise run demo` | Real OPA and Router behavior against an in-process Target MCP stub. No Docker, Vault server, or OpenShell. |
+| Local | `mise run demo` | OPA and Router behavior against an in-process Target MCP stub. No Docker, Vault server, or OpenShell. |
 | Signed | `mise run smoke-vault` | A local dev Vault issues and transit-signs a bundle; the harness verifies it offline. |
-| Enforced | `mise run demo-openshell` (needs the gateway up first — see [Enforced OpenShell demo](#enforced-openshell-demo)) | A real OpenShell sandbox makes the Router the agent's only network path to the Target MCP. |
+| Enforced | `mise run demo-openshell` (needs the gateway up first — see [Enforced OpenShell demo](#enforced-openshell-demo)) | An OpenShell sandbox makes the Router the agent's only network path to the Target MCP. |
 
 The local demo is the newcomer path. The other levels are optional extensions, not
 prerequisites for understanding the project; their extra mise-managed tools are installed
@@ -56,50 +56,59 @@ downstream vendor calls observed: 1
 What just ran:
 
 - the bundle was loaded from a local file using a fixture signature verifier;
-- real OPA evaluated the bundle's Rego;
+- OPA evaluated the bundle's Rego;
 - the Router enforced the returned field limits;
 - an in-process Target MCP stub received only the allowed call;
 - structured audit events were written to `/tmp/odis-demo-audit.jsonl`.
 
-This proves the gate logic, not hard containment. Without OpenShell or an equivalent
-substrate preventing direct egress, an agent could bypass the Router.
+This proves the gate logic, not hard containment. Without OpenShell or an equivalent sandbox
+blocking the agent's direct network access, an agent could bypass the Router.
 
-## What is real and what is a fixture
+## What ships, and what stands in
 
 | Surface | Implemented here | Production boundary |
 | --- | --- | --- |
-| Router | Real MCP server/forwarder, OPA decision, action-limit enforcement, audit | Deploy it on the agent's mandatory tool path. |
+| Router | MCP server/forwarder, OPA decision, action-limit enforcement, audit | Deploy it on the agent's mandatory tool path. |
 | Policy | Local example bundle or Vault-issued, Ed25519-signed runtime bundle | Operate signing roots, distribution, rotation, and revocation. |
-| Passport / sponsor identity | Constructor-injected fixture providers | Real runtime identity and SVID handoff remain integration work. |
+| Passport / originating principal | `serve --inbound-key` validates the caller's workload JWT and takes the agent id from its verified subject. `FixtureIdentityIssuer` stands in for SPIRE and mints the same shape (ES256/P-256, SPIFFE-ID `sub`, required `aud`, 5-min TTL). The originating principal behind it is a constructor-injected fixture provider. | Bring your own Passport — that is the point. Point the three `--inbound-*` settings at your IdP. The harness ships **no credential delivery path** of its own; the substrate carries it. On OpenShell the agent holds a placeholder and the egress proxy substitutes the credential, so the agent never has it — `docs/run-modes.md` section 3 states what that needs. Proof-of-possession and a handed-in delegation are unimplemented. |
 | Bridge | Optional fixture token exchange through `serve --bridge` | A production broker/exchanger is not included. |
-| Target MCP | In-process or local HTTP stub | The real Target MCP owns the provider credential. |
-| Substrate | Real OpenShell in the advanced example | OpenShell or equivalent must prevent direct Target MCP access. |
+| Target MCP | In-process or local HTTP stub | The Target MCP owns the provider credential. |
+| Sandbox | OpenShell in the advanced example | OpenShell or equivalent must block the agent's direct network access to the Target MCP. |
 
 The Router does not accept a static provider bearer. `demo` and `serve` without
 `--oauth2` or `--bridge` use no Router-to-Target credential; the optional fixture Bridge
 demonstrates short-lived, audience-scoped leg-2 auth. The Target MCP remains the
 provider-credential boundary.
 
-## Running `serve`: policy source and Target MCP authentication
+## Running `serve`: policy source, caller authentication, Target MCP authentication
 
-`serve` makes two independent choices: where the Router gets its Authority Grant and how
-it authenticates to the downstream Target MCP. `--signed` controls the grant source;
-`--oauth2` controls downstream authentication. `--bundle` selects a local grant only when
-`--signed` is absent.
+`serve` makes three independent choices: where the Router gets its Authority Grant,
+whether it authenticates the agent calling it, and how it authenticates to the downstream
+Target MCP. `--signed` controls the grant source; `--inbound-key` controls caller
+authentication; `--oauth2` controls downstream authentication. `--bundle` selects a local
+grant only when `--signed` is absent.
 
 | Option | When present | When absent |
 | --- | --- | --- |
-| `--bundle PATH` | Plain `serve` loads that local YAML with the fixture verifier. In signed mode this option is ignored. | Plain `serve` uses `$ODIS_BUNDLE`, then `policy/bundle.example.yaml`; signed mode gets the grant from Vault. |
-| `--signed` | The Router exchanges its workload JWT for a Vault token carrying the `apf-issue` policy, calls `apf/issue`, and offline-verifies the returned signed bundle. | No Vault call or cryptographic verification occurs; the Router trusts the selected local YAML through the fixture verifier. |
+| `--bundle PATH` | Selects that local YAML as the grant; how it is trusted is a separate, required choice (next row). In signed mode this option is ignored. | Plain `serve` uses `$ODIS_BUNDLE`, then `policy/bundle.example.yaml`; signed mode gets the grant from Vault. |
+| `--signed` | The Router exchanges its workload JWT for a Vault token carrying the `apf-issue` policy, calls `apf/issue`, and offline-verifies the returned signed bundle. | The grant comes from a local file, and you must say how it is trusted — see the next row. |
+| **grant trust** (local files only) | One of `--bundle-pubkey-file` (verify a sibling `<bundle>.sig` against a trust anchor) or `--trust-bundle-unverified` (accept an unverified grant). Exactly one is required; the banner names which is in force. | The command refuses to start. There is no default, because a default here is an unverified grant nobody chose. |
+| `--inbound-key PEM` | The MCP surface is an OAuth 2.1 resource server: a caller must present a workload JWT, checked for signature, issuer, audience and expiry against an asymmetric-algorithm allowlist before any handler runs. `agent_id` is the verified subject. Requires `--inbound-issuer` and `--inbound-audience`. | Any caller is accepted and every call is attributed to a constant agent id, marked in the audit record as an unverified identity. The startup banner states this. |
 | `--oauth2` | Router-to-Target requests use interactive authorization-code/PKCE with dynamic client registration; tokens stay in memory. | Without `--bridge` either, the Router still attempts Target MCP discovery and calls, but with `auth=None`; an authentication-required endpoint fails closed. |
+
+`serve` listens on plain HTTP and takes no certificate or key. With `--inbound-key` the
+credential crosses the wire readable, so put a TLS terminator in front of the Router before
+it leaves the loopback interface.
 
 `--oauth2` and `--bridge` are mutually exclusive; selecting both is a CLI error.
 
-For a local, convention-trusted GitLab policy plus real downstream OAuth:
+For a local GitLab policy plus downstream OAuth. The grant carries no signature, so
+the command has to say it is accepting an unverified one — there is no default:
 
 ```bash
 mise exec -- odis-harness serve \
   --bundle policy/gitlab-readonly.bundle.yaml \
+  --trust-bundle-unverified \
   --oauth2
 ```
 
@@ -111,15 +120,21 @@ no effect in signed mode.
 
 ## Signed-bundle demo
 
-After the quick demo:
+After the quick demo. Neither path requires Docker or OpenShell.
 
 ```bash
-mise run smoke-vault
+mise run demo-signed   # the canonical scenarios, against a Vault-issued grant
+mise run smoke-vault   # issuance and offline verification on their own
 ```
 
-This builds the Go `apf-bundle-issuer` plugin, boots an ephemeral dev Vault, provisions
-the scoped AppRole and JWT-auth legs, issues a bundle, and verifies its Ed25519 signature
-offline. It does not require Docker or OpenShell.
+`demo-signed` runs the same four calls as `demo` with one axis changed: the grant is minted
+and Ed25519 transit-signed by Vault, and the Router verifies that signature **offline**
+before trusting it. Same Router, same gate, same transport, same vendor stub — so a
+difference in outcome between the two is a difference in the grant, not in the harness.
+
+`smoke-vault` is the narrower check: it builds the Go `apf-bundle-issuer` plugin, boots an
+ephemeral dev Vault, provisions the scoped AppRole and JWT-auth legs, issues a bundle and
+verifies its signature offline, without putting a Router gate in front of it.
 
 The configuration details are in [`vault/SETUP.md`](vault/SETUP.md). The fixture-to-SPIRE
 trust swap and the unresolved production SVID handoff are documented in
@@ -127,7 +142,7 @@ trust swap and the unresolved production SVID handoff are documented in
 
 ## Enforced OpenShell demo
 
-The full example adds the substrate that makes the gate mandatory:
+The full example adds the sandbox that makes the gate mandatory:
 
 ```bash
 bash examples/openshell-gated-agent/gateway/setup.sh
@@ -176,6 +191,9 @@ enters state. It is an advanced operational path, not part of the newcomer demo.
 
 ## Where to go next
 
+- [`docs/odis-conformance.md`](docs/odis-conformance.md) — the per-requirement mapping
+  against the ODIS working draft, and the role-capability declaration. Start here to see
+  what this implementation does and does not claim.
 - [`docs/run-modes.md`](docs/run-modes.md) — the conceptual walkthrough and honesty
   boundaries.
 - [`policy/bundle.example.yaml`](policy/bundle.example.yaml) — the local runtime bundle

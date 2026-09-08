@@ -21,7 +21,7 @@ SUBJECT="spiffe://example.org/agent/jira"
 ( cd "$HARNESS" && uv run python - "$FIXDIR" "$ISSUER" "$AUD" "$SUBJECT" <<'PY'
 import json, sys
 from datetime import timedelta
-from odis_harness.vault.fixtures import FixtureIdentityIssuer
+from odis_harness.fixtures.issuer import FixtureIdentityIssuer
 d, issuer, aud, sub = sys.argv[1:5]
 iss = FixtureIdentityIssuer.generate(issuer=issuer)
 jwt = iss.mint(audience=aud, subject=sub, claims={"group": "jira-writers"}, ttl=timedelta(minutes=30))

@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
-from odis_harness.bundle import Bundle, Family, ToolPolicy, VendorMcp
+from odis_harness.bundle import Bundle, Family, VendorMcp
+from odis_harness.fixtures.vendor import InMemoryMcpClient
 from odis_harness.mcp_forwarder.discovery import DiscoveryCache
 from odis_harness.mcp_forwarder.vendor_client import (
-    InMemoryMcpClient,
     ToolDescriptor,
 )
+from tests import factories
+
+if TYPE_CHECKING:
+    from odis_harness.bundle.types import DefaultMode
 
 pytestmark = pytest.mark.enable_socket
 
@@ -21,27 +27,20 @@ def _vendor(endpoint_id: str = "jira-prod-mcp-v1") -> VendorMcp:
 def _family(
     *,
     action_limits_by_tool: dict[str, dict[str, object]] | None = None,
-    default_mode: str = "strict",
+    default_mode: DefaultMode = "strict",
 ) -> Family:
-    tool_limits = action_limits_by_tool or {"update_issue": {"allowed_fields": ["labels"]}}
-    return Family(
-        vendor_mcp=_vendor(),
+    vendor = _vendor()
+    return factories.family(
         policy="package odis_policy\n",
-        tools={
-            tool: ToolPolicy(action_limits=action_limits)
-            for tool, action_limits in tool_limits.items()
-        },
-        default_mode=default_mode,  # type: ignore[arg-type]
+        action_limits_by_tool=action_limits_by_tool,
+        default_mode=default_mode,
+        endpoint_id=vendor.endpoint_id,
+        url=vendor.url,
     )
 
 
 def _bundle(families: dict[str, Family] | None = None) -> Bundle:
-    return Bundle(
-        bundle_id="b",
-        bundle_version="0.1.0",
-        trust_root_id="r",
-        families=families or {"jira-prod": _family()},
-    )
+    return factories.bundle(families=families or {"jira-prod": _family()})
 
 
 def _tool(name: str) -> ToolDescriptor:

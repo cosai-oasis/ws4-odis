@@ -1,22 +1,30 @@
 """Module-level constants for the contracts capability.
 
-Fixed fixture policy-metadata literals are carried by every envelope because
-the harness ships with a fixture signed bundle. They are intentionally not
-configurable (env var / CLI flag) — making them configurable would invite
-drift between what the harness claims to enforce and what is actually loaded.
+Two different kinds of constant live here, and the distinction matters.
+
+`SCHEMA_VERSION` and `PHASE` identify the harness itself. They are genuinely fixed, are
+`const`-pinned in the envelope schemas, and the audit sink rejects an emitter that tries
+to state anything else.
+
+The three `STUB_*` grant-identity values are fallbacks only, for an envelope built with
+no grant in play — contract tests, mostly. Every production path stamps the values
+from the `Bundle` in force, because an envelope has to name the grant it was produced
+under for the audit trail to say which policy authorized a call. The envelope schemas
+therefore leave those three free-form (`minLength: 1`): a pinned value would describe
+this fixture rather than whatever is loaded.
 """
 
 from __future__ import annotations
 
-# -- Stub policy metadata ----------------------------------------------------
+# -- Fallback grant identity (overridden by the loaded Bundle) ----------------
 
-#: Fixed bundle identifier — the harness ships no real signed bundle.
+#: Grant identifier for an envelope built with no `Bundle` in play.
 STUB_BUNDLE_ID: str = "odis-fixture-bundle"
 
-#: SemVer-shaped bundle version literal.
+#: SemVer-shaped grant version literal, for the same case.
 STUB_BUNDLE_VERSION: str = "0.0.0-odis-harness"
 
-#: Stub trust-anchor identifier; not a real trust root.
+#: Trust-anchor identifier for the same case; nothing is anchored to it.
 STUB_TRUST_ROOT_ID: str = "odis-fixture-trust-root"
 
 #: ``schema_version`` value carried by every ODIS Contract Harness envelope. Distinct from

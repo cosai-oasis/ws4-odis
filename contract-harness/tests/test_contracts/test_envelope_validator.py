@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from odis_harness.contracts import (
@@ -18,15 +16,6 @@ from odis_harness.contracts.validator import (
     EnvelopeValidator,
     UnknownEnvelopeError,
 )
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SCHEMAS_DIR = _REPO_ROOT / "schemas"
-
-
-@pytest.fixture(scope="module")
-def envelope_validator() -> EnvelopeValidator:
-    return EnvelopeValidator(_SCHEMAS_DIR)
-
 
 # -- Examples for each envelope ---------------------------------------------
 
@@ -45,10 +34,10 @@ def _common_metadata() -> dict[str, object]:
 
 def _runtime_context() -> dict[str, object]:
     return _common_metadata() | {
-        "sponsor": {"id": "fixture-sponsor", "type": "entra_oidc"},
+        "originating_principal": {"id": "fixture-principal", "type": "entra_oidc"},
         "agent": {"id": "fixture-agent", "type": "fixture_workload_identity"},
         "task_intent": "Add a label",
-        "target_resource": {"resource_family": "jira", "instance_id": "APF-123"},
+        "target_resource": {"resource_family": "jira"},
         "issued_at": "2026-05-28T00:00:00Z",
     }
 
@@ -56,10 +45,11 @@ def _runtime_context() -> dict[str, object]:
 def _authz_request() -> dict[str, object]:
     return _common_metadata() | {
         "subject": {
-            "sponsor": {"id": "fixture-sponsor", "type": "entra_oidc"},
+            "originating_principal": {"id": "fixture-principal", "type": "entra_oidc"},
             "agent": {"id": "fixture-agent", "type": "fixture_workload_identity"},
+            "delegation_chain": [],
         },
-        "target_resource": {"resource_family": "jira", "instance_id": "APF-123"},
+        "target_resource": {"resource_family": "jira"},
         "verb": "jira.update_issue",
         "request_body": {"project": "APF", "fields": {"labels": ["odis-demo"]}},
         "task_intent": "Add a label",

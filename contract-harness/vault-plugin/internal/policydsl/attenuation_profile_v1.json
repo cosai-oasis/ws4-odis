@@ -1,0 +1,38 @@
+{
+  "profile_uri": "urn:odis:contract-harness:attenuation-profile:v1",
+  "profile_version": "1",
+  "description": "Normalization and comparison rules this implementation applies when narrowing a capability grant against a bound (ODIS-L2-06). Comparison is structural over typed rules; no scope strings are normalized or compared.",
+  "condition_operators": ["eq", "startsWith"],
+  "comparison_axes": [
+    {
+      "axis": "family",
+      "rule": "A family absent from the bound is dropped. The bound never adds a family the grant does not request."
+    },
+    {
+      "axis": "verb",
+      "rule": "A verb is kept only when both the grant requests it and the bound permits it. At most one rule per verb per spec."
+    },
+    {
+      "axis": "allow_fields",
+      "rule": "An empty allow-list means unrestricted and never narrows the other side. Two non-empty lists intersect. A verb whose two non-empty lists share no field is dropped, never emitted with an empty list."
+    },
+    {
+      "axis": "condition",
+      "rule": "The kept rule requires the conjunction of both sides' conditions. Conditions are never merged, weakened, or reordered."
+    },
+    {
+      "axis": "default_mode",
+      "rule": "A family the bound keeps is forced to strict, so a bounded family never forwards an unpoliced tool."
+    }
+  ],
+  "fail_closed_rules": [
+    "A condition operator outside condition_operators fails at compile time.",
+    "A verb repeated within one spec fails at compile time.",
+    "A family whose intersection leaves zero rules is dropped rather than left unpoliced.",
+    "An unknown, lossy, or indeterminate comparison drops the affected verb or family; it never widens."
+  ],
+  "normalization": [
+    "Verbs, fields, and condition values are compared as exact byte strings. No case folding, Unicode folding, trimming, wildcard expansion, or hierarchy inference is applied.",
+    "Rule order within a spec is preserved so compilation is deterministic."
+  ]
+}

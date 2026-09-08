@@ -59,7 +59,7 @@ class VaultBundleClient:
 
     `transport`, when set, is injected into the async HTTP client so tests can
     pass an `httpx.MockTransport` (fully hermetic — no socket). Production omits
-    it and the client opens real connections to `vault_addr`.
+    it and the client opens connections to `vault_addr`.
     """
 
     vault_addr: str

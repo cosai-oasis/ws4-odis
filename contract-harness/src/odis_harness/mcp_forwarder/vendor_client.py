@@ -1,4 +1,4 @@
-"""`McpClient` Protocol + `InMemoryMcpClient` test double.
+"""The `McpClient` Protocol — the vendor-transport seam.
 
 The Router holds one `McpClient` per family (per the bundle's routing table)
 and calls it during forward orchestration. The production implementation
@@ -9,16 +9,31 @@ double that exercises the same surface.
 `VendorUnreachable` is the typed transport-failure error; the Router catches
 it at the forward boundary and converts to `odis.mcp.forward_refused` with
 `reason_code: vendor_unreachable`.
+
+`TRACE_HEADER_NAME` is the wire name for the call's trace identifier, which travels with
+`call_tool`'s `correlation_id`. It lives here, beside the Protocol that carries the id,
+because both the transport that writes the header (`vendor_http`) and the Bridge that
+reads it back off the outbound request (`bridge.exchange`) need the one name, and this
+module is the dependency-light one they can both import.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Mapping
     from typing import Any
+
+
+#: Header carrying the call's trace identifier to the Target MCP (ODIS-CC-01, and the
+#: CC-06 "SHOULD inject correlation identifiers into downstream requests" clause). Named
+#: after ODIS §6.4's `request_trace_id`, whose own definition settles what a target may do
+#: with it: correlate logs, never treat it as evidence of identity or delegated authority.
+#: Not `traceparent` — W3C Trace Context would also require a span id, and fabricating one
+#: without a tracer corrupts the very trace graph it claims to join.
+TRACE_HEADER_NAME = "ODIS-Request-Trace-Id"
 
 
 class VendorUnreachable(RuntimeError):  # noqa: N818 - domain term reads clearer without the Error suffix
@@ -50,7 +65,7 @@ class ToolResult:
     `content` mirrors the MCP spec's content list (text/image/resource).
     `is_error` mirrors the spec's `isError`: a tool-level failure the vendor
     reported in-band (distinct from `VendorUnreachable`, a transport failure).
-    The Router relays it so the agent sees the vendor's real success/error status.
+    The Router relays it so the agent sees the vendor's success/error status.
     """
 
     content: list[Mapping[str, Any]]
@@ -71,8 +86,20 @@ class McpClient(Protocol):
         Raises `VendorUnreachable` on transport failure.
         """
 
-    async def call_tool(self, name: str, arguments: Mapping[str, Any]) -> ToolResult:
+    async def call_tool(
+        self,
+        name: str,
+        arguments: Mapping[str, Any],
+        *,
+        correlation_id: str | None = None,
+    ) -> ToolResult:
         """Forward an invocation; return the vendor's response.
+
+        `correlation_id` is the Router's trace identifier for this call. An implementation
+        whose transport can carry it SHOULD (ODIS-CC-01), so the trail does not stop at the
+        Router boundary; `HttpMcpClient` sends it as `TRACE_HEADER_NAME`. It is optional so
+        an in-process double need not thread it, and `None` means the call goes downstream
+        untraced.
 
         Raises `VendorUnreachable` on transport failure.
         """
@@ -86,7 +113,10 @@ class SupportsSessionEstablish(Protocol):
     call/list surface, and `InMemoryMcpClient` need not grow this method). At
     boot the Router establishes leg-2 sessions for clients that satisfy this
     Protocol (`HttpMcpClient` with a `BridgeAuth`), priming one token per family
-    before discovery so the later `tools/list` reuses it (DL-2 / REQ-9.8).
+    before discovery, so discovery's own `tools/list` reuses it instead of paying the
+    exchange itself. Only `BridgeAuth` primes — an RFC 8693 exchange against the token
+    broker, machine-to-machine. The interactive OAuth path (`oauth.py`) is deliberately
+    not primed here.
     """
 
     async def establish(self) -> str | None:
@@ -97,50 +127,8 @@ class SupportsSessionEstablish(Protocol):
         """
 
 
-@dataclass
-class InMemoryMcpClient:
-    """In-process test double implementing `McpClient`.
-
-    Construct with a catalog of tools and either a static `responses` map or
-    a `responder` callable. If both are provided, `responder` wins (it is
-    consulted first). Set `unreachable=True` to simulate a transport outage
-    on every call.
-
-    `self.calls` records every `call_tool` invocation — including ones that
-    raise — so tests can assert "the Router attempted to call X" even when
-    the vendor is unreachable.
-    """
-
-    tools: list[ToolDescriptor]
-    responses: dict[str, ToolResult] = field(default_factory=dict)
-    responder: Callable[[str, dict[str, Any]], ToolResult] | None = None
-    unreachable: bool = False
-    #: Captured calls for test assertions. Populated by `call_tool` BEFORE
-    #: any exception is raised so tests can observe attempted-but-failed calls.
-    calls: list[tuple[str, Mapping[str, Any]]] = field(default_factory=list)
-
-    async def list_tools(self) -> list[ToolDescriptor]:
-        if self.unreachable:
-            message = "vendor in-memory client configured as unreachable"
-            raise VendorUnreachable(message)
-        return list(self.tools)
-
-    async def call_tool(self, name: str, arguments: Mapping[str, Any]) -> ToolResult:
-        # Record before any raise so tests can observe attempted-but-failed calls.
-        self.calls.append((name, dict(arguments)))
-        if self.unreachable:
-            message = "vendor in-memory client configured as unreachable"
-            raise VendorUnreachable(message)
-        if self.responder is not None:
-            return self.responder(name, dict(arguments))
-        if name not in self.responses:
-            message = f"no response configured for tool {name!r} on InMemoryMcpClient"
-            raise VendorUnreachable(message)
-        return self.responses[name]
-
-
 __all__ = [
-    "InMemoryMcpClient",
+    "TRACE_HEADER_NAME",
     "McpClient",
     "SupportsSessionEstablish",
     "ToolDescriptor",

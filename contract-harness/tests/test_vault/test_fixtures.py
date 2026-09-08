@@ -8,7 +8,7 @@ from __future__ import annotations
 import jwt
 import pytest
 
-from odis_harness.vault.fixtures import FixtureIdentityIssuer
+from odis_harness.fixtures.issuer import FixtureIdentityIssuer
 
 _AUD = "apf-bundle-issuer"
 

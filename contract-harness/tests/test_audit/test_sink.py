@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 import json
 import uuid
-from typing import TYPE_CHECKING
 
 import pytest
 
@@ -19,22 +18,6 @@ from odis_harness.contracts import (
     EnvelopeValidator,
 )
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
-_REPO_ROOT_PARENTS = 2  # /tests/test_audit/test_sink.py -> repo root
-
-
-def _repo_root() -> Path:
-    from pathlib import Path as _Path  # noqa: PLC0415
-
-    return _Path(__file__).resolve().parents[_REPO_ROOT_PARENTS]
-
-
-@pytest.fixture
-def validator() -> EnvelopeValidator:
-    return EnvelopeValidator(_repo_root() / "schemas")
-
 
 @pytest.fixture
 def output() -> io.StringIO:
@@ -42,8 +25,8 @@ def output() -> io.StringIO:
 
 
 @pytest.fixture
-def sink(output: io.StringIO, validator: EnvelopeValidator) -> AuditSink:
-    return AuditSink(output=output, validator=validator)
+def sink(output: io.StringIO, envelope_validator: EnvelopeValidator) -> AuditSink:
+    return AuditSink(output=output, validator=envelope_validator)
 
 
 def _base_event(**overrides: object) -> AuditEvent:

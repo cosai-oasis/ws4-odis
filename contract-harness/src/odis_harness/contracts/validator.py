@@ -2,9 +2,9 @@
 
 Loads every JSON Schema in a configured directory at construction time, builds
 one `Draft202012Validator` per schema, and exposes a single `validate` method
-keyed by envelope name (schema-file stem). The audit-event extension rule
-(`odis.<ns>.<name>` namespace) is layered on top via a separate runtime check
-that consumers can apply after schema validation.
+keyed by envelope name (schema-file stem). For `odis.audit.event.v1`, `validate`
+also applies the audit-taxonomy rule itself (see `_check_event_type`) — it is not
+a separate step callers have to remember.
 
 Failures raise `EnvelopeValidationError` with the originating envelope name,
 JSON-pointer-style instance path, JSON-pointer-style schema path, and the

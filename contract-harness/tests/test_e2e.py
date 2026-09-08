@@ -1,10 +1,10 @@
-"""End-to-end: real MCP client → HTTP → Router (policy gate) → HTTP → vendor.
+"""End-to-end: MCP client → HTTP → Router (policy gate) → HTTP → vendor.
 
 The deployment-shaped proof that every leg works stitched together:
 
     SDK MCP client
-        --HTTP--> ODIS Router (built via cli.build_router, real OPA gate)
-            --HTTP--> a real vendor MCP server (uvicorn)
+        --HTTP--> ODIS Router (built via cli.build_router, OPA gate)
+            --HTTP--> a vendor MCP server (uvicorn)
 
 Both servers run on loopback ports; the client is the official SDK Streamable
 HTTP client. Exercises discovery over HTTP, an allowed tools/call forwarded to
@@ -14,31 +14,34 @@ before the vendor is ever contacted.
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
-import socket
 from typing import TYPE_CHECKING
 
 import pytest
-import uvicorn
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from mcp.server.lowlevel import Server
 from mcp.types import TextContent, Tool
 
 from odis_harness.cli import build_router
+from odis_harness.cli.builders import RouterWiring
+from odis_harness.fixtures.signature import FixtureSignatureVerifier
 from odis_harness.mcp_forwarder.server import build_mcp_server
-from odis_harness.mcp_forwarder.transports import MCP_MOUNT_PATH, build_asgi_app
+from odis_harness.mcp_forwarder.transports import (
+    build_asgi_app,
+    mcp_url,
+    serving_http,
+)
 from odis_harness.mcp_forwarder.vendor_http import HttpMcpClient
+from tests import factories
 from tests.factories import audit_sink
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
     from pathlib import Path
 
     from starlette.applications import Starlette
 
-    from odis_harness.bundle import Family
+    from odis_harness.cli.builders import VendorClientContext
+
 
 pytestmark = [pytest.mark.enable_socket, pytest.mark.requires_opa]
 
@@ -67,18 +70,12 @@ families:
 """
 
 
-def _http_vendor_factory(family: Family) -> HttpMcpClient:
-    return HttpMcpClient(url=family.vendor_mcp.url)
-
-
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return int(s.getsockname()[1])
+def _http_vendor_factory(ctx: VendorClientContext) -> HttpMcpClient:
+    return HttpMcpClient(url=ctx.family.vendor_mcp.url)
 
 
 def _vendor_app() -> Starlette:
-    """A real (if minimal) vendor MCP server — stands in for a Jira MCP server.
+    """A minimal vendor MCP server — stands in for a Jira MCP server.
 
     Echoes the issue_key back so the test can prove the agent's args flowed all
     the way through the Router to the vendor.
@@ -103,45 +100,34 @@ def _vendor_app() -> Starlette:
     return build_asgi_app(server)
 
 
-@contextlib.asynccontextmanager
-async def _running(app: Starlette, port: int) -> AsyncIterator[None]:
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error"))
-    task = asyncio.create_task(server.serve())
-    try:
-        for _ in range(100):
-            if server.started:
-                break
-            await asyncio.sleep(0.05)
-        if not server.started:
-            message = f"server on :{port} did not start"
-            raise RuntimeError(message)
-        yield
-    finally:
-        server.should_exit = True
-        await task
-
-
 async def test_e2e_full_chain_allow_and_deny(tmp_path: Path, opa_binary: str) -> None:
-    vendor_port = _free_port()
-    router_port = _free_port()
+    vendor_port = factories.free_port()
+    router_port = factories.free_port()
 
     bundle_path = tmp_path / "bundle.yaml"
     bundle_path.write_text(
-        _BUNDLE_TEMPLATE.format(vendor_url=f"http://127.0.0.1:{vendor_port}{MCP_MOUNT_PATH}"),
+        _BUNDLE_TEMPLATE.format(vendor_url=mcp_url("127.0.0.1", vendor_port)),
         encoding="utf-8",
     )
 
-    async with _running(_vendor_app(), vendor_port):
-        # Build the Router via the real CLI wiring: HttpMcpClient toward the
+    async with serving_http(_vendor_app(), port=vendor_port):
+        # Build the Router via the CLI wiring: HttpMcpClient toward the
         # vendor URL, discovery populated over HTTP.
         router = await build_router(
             bundle_path=bundle_path,
             opa_binary=opa_binary,
             audit=audit_sink(),
-            vendor_client_factory=_http_vendor_factory,
+            signature_verifier=FixtureSignatureVerifier(),
+            wiring=RouterWiring(
+                context_factory=factories.context_factory(),
+                # The HTTP client, not an in-memory double — this test exists to
+                # prove discovery and forwarding cross a socket to a separately-served vendor.
+                vendor_client_factory=_http_vendor_factory,
+            ),
         )
-        async with _running(build_asgi_app(build_mcp_server(router)), router_port):
-            url = f"http://127.0.0.1:{router_port}{MCP_MOUNT_PATH}"
+        server = build_mcp_server(router, requires_authenticated_caller=False)
+        async with serving_http(build_asgi_app(server), port=router_port):
+            url = mcp_url("127.0.0.1", router_port)
             async with (
                 streamable_http_client(url) as (read, write, _sid),
                 ClientSession(read, write) as client,

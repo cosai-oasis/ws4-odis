@@ -17,7 +17,11 @@ dependencies = [
     "jsonschema>=4.23",
     "pyyaml>=6.0.2",
     "structlog>=25.1",
-    "mcp>=1.27.1",
+    # Capped below 2. `mcp_forwarder` imports the SDK's auth internals
+    # (`server.auth.middleware.bearer_auth`, `server.auth.provider`), and 2.x already
+    # renames client symbols the example agent uses — a floor alone resolves a major
+    # that does not fit. Raise the cap deliberately, with the migration.
+    "mcp>=1.27.1,<2",
     "cryptography>=48.0.0",
     "pyjwt[crypto]>=2.13.0",
     "pydantic>=2.0",
@@ -53,7 +57,6 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "--strict-markers --strict-config -ra --disable-socket"
 markers = [
-    "integration: integration tests (deselect with '-m \"not integration\"')",
     "requires_opa: tests that call the real `opa` binary; skipped if not on PATH",
     "requires_vault: tests that boot a dev-mode `vault` binary; skipped if ODIS_VAULT_BIN/./vault absent",
 ]
@@ -90,15 +93,24 @@ ignore = [
 ]
 "tests/**/*.py" = [
     "S101",    # assert allowed in tests
+    "S105",    # fixture token literals; naming them *_TOKEN is what makes the test readable
     "S106",    # hardcoded passwords in fixtures
     "ANN",     # type annotations relaxed in tests
     "ARG",     # unused args (fixtures)
     "PLR2004", # magic numbers in test data
 ]
-"src/odis_harness/cli/commands.py" = [
-    "B008",    # typer.Option(...) in arg defaults is the Typer idiom
+# Pinned to the two modules that declare Typer command signatures. A package-wide glob
+# would also relieve `builders.py`, which is ordinary library code and should keep the
+# boolean-trap and argument-count rules. The `Annotated` form removes the need for B008
+# and FBT003; only what is inherent to Typer's model remains.
+"src/odis_harness/cli/serve.py" = [
     "FBT001",  # bool option params are Typer flags, never positional
-    "FBT003",  # bool default to typer.Option(...) is the flag's value
+    "FBT002",  # ... and their default belongs in the signature in the Annotated form
+    "PLR0913", # Typer maps each CLI option to a command parameter (the serve surface)
+]
+"src/odis_harness/cli/demo.py" = [
+    "FBT001",  # bool option params are Typer flags, never positional
+    "FBT002",  # ... and their default belongs in the signature in the Annotated form
     "PLR0913", # Typer maps each CLI option to a command parameter (the serve surface)
 ]
 

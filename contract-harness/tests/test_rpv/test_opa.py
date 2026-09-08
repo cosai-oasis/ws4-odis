@@ -34,7 +34,7 @@ def _input(
 ) -> dict[str, object]:
     return {
         "verb": "jira.update_issue",
-        "target_resource": {"resource_family": "jira", "instance_id": "APF-123"},
+        "target_resource": {"resource_family": "jira"},
         "request_body": {
             "project": project,
             "fields": {"labels": labels if labels is not None else ["odis-demo"]},

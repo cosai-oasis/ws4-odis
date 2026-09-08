@@ -2,7 +2,7 @@
 
 Two subcommands, both wired to the ODIS Router (the generic MCP-policy-forwarder):
 
-- ``serve`` — runs the Router as a real MCP server over HTTP. Any standard MCP
+- ``serve`` — runs the Router as an MCP server over HTTP. Any standard MCP
   client (Claude Code, MCP Inspector, Cursor) connects to ``http://host:port/mcp``.
   Forwards approved ``tools/call`` to the vendor MCP servers named in the loaded
   bundle's routing entries. With ``--signed`` it fetches a Vault-issued,
@@ -11,8 +11,10 @@ Two subcommands, both wired to the ODIS Router (the generic MCP-policy-forwarder
   that mode.
 
 - ``demo``  — runs the canonical Tier 3 scenarios end-to-end against an
-  in-process vendor stub and prints the outcomes. A no-network sanity check
-  that exercises the real policy chain (real OPA + action limits + audit).
+  in-process vendor stub and prints the outcomes. Zero external infrastructure,
+  though it does bind a loopback port and drive the Router over MCP, so it
+  exercises the transport and inbound-auth path as well as the policy chain
+  (OPA + action limits + audit).
 
 Environment variables:
 
@@ -41,18 +43,24 @@ Signed mode (``serve --signed``) adds:
 - ``ODIS_VAULT_JWT_MOUNT`` / ``ODIS_VAULT_JWT_ROLE`` / ``ODIS_VAULT_ISSUE_PATH``
                                (defaults ``jwt`` / ``router`` / ``apf/issue``)
 
-`builders` holds the Router-construction wiring; `commands` holds the Typer CLI.
+`builders` holds the Router-construction wiring and the grant/opa/bundle resolvers;
+`app` holds the Typer application and `main`; `serve` and `demo` hold one command
+each; `options` and `settings` hold the shared flag declarations and their resolved
+shapes.
 """
 
 from __future__ import annotations
 
+# Imported for their `@app.command()` registration side effect, not for their names.
+from odis_harness.cli import demo as _demo  # noqa: F401
+from odis_harness.cli import serve as _serve  # noqa: F401
+from odis_harness.cli.app import app, main
 from odis_harness.cli.builders import (
     SignedBundleSource,
     build_router,
     build_router_from_bundle,
     build_router_signed,
 )
-from odis_harness.cli.commands import app, main
 
 __all__ = [
     "SignedBundleSource",

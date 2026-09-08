@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -91,5 +92,91 @@ def test_schema_rejects_extra_top_level_field(
     schema: dict[str, Any], minimal_bundle: dict[str, Any]
 ) -> None:
     bad = dict(minimal_bundle, extra_field="surprise")
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schema).validate(bad)
+
+
+
+#: The `sha256:<64 hex>` form the schema's digest pattern requires. Named because a
+#: 71-character literal does not fit inline at this indent.
+_RECORD_DIGEST = "sha256:" + hashlib.sha256(b"jira-mapping-v1").hexdigest()
+_PROFILE_DIGEST = "sha256:" + hashlib.sha256(b"attenuation-profile-v1").hexdigest()
+
+def test_schema_accepts_the_delegation_record(
+    schema: dict[str, Any], minimal_bundle: dict[str, Any]
+) -> None:
+    """The plugin signs the delegation record, and `additionalProperties: false`
+    means a field the schema does not know fails at load."""
+    issued = dict(
+        minimal_bundle,
+        actor="spiffe://example.org/agent/jira",
+        originating_principal="vault:entity:e-platform",
+        contributing_records=[
+            {"name": "jira", "version": 1, "digest": _RECORD_DIGEST},
+        ],
+        attenuation_profile_ref={
+            "uri": "urn:odis:contract-harness:attenuation-profile:v1",
+            "digest": _PROFILE_DIGEST,
+        },
+        delegation_chain=[],
+        issued_at="2026-08-27T12:00:00Z",
+        expires_at="2026-08-27T13:00:00Z",
+    )
+    issued["families"]["jira-prod"]["vendor_mcp"]["egress_mode"] = "bridge"
+    Draft202012Validator(schema).validate(issued)
+
+
+@pytest.mark.parametrize("mode", ["passthrough", "Bridge", ""])
+def test_schema_rejects_other_egress_modes(
+    schema: dict[str, Any], minimal_bundle: dict[str, Any], mode: str
+) -> None:
+    bad = json.loads(json.dumps(minimal_bundle))
+    bad["families"]["jira-prod"]["vendor_mcp"]["egress_mode"] = mode
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schema).validate(bad)
+
+
+def test_schema_requires_contributing_record_fields(
+    schema: dict[str, Any], minimal_bundle: dict[str, Any]
+) -> None:
+    """A record reference without a digest cannot be checked against the record it names."""
+    bad = dict(minimal_bundle, contributing_records=[{"name": "jira", "version": 1}])
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schema).validate(bad)
+
+
+def test_schema_rejects_an_empty_contributing_records_list(
+    schema: dict[str, Any], minimal_bundle: dict[str, Any]
+) -> None:
+    """A manifest naming no record names nothing; omit it instead."""
+    bad = dict(minimal_bundle, contributing_records=[])
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schema).validate(bad)
+
+
+def test_schema_rejects_the_draft_authorization_ref_name(
+    schema: dict[str, Any], minimal_bundle: dict[str, Any]
+) -> None:
+    """`additionalProperties: false` is what keeps the draft's field name from being
+    reintroduced over the manifest's shape."""
+    bad = dict(
+        minimal_bundle,
+        originating_authorization_ref={"records": [{"name": "j", "version": 1, "digest": "x"}]},
+    )
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schema).validate(bad)
+
+
+def test_schema_rejects_a_claimed_delegation_hop(
+    schema: dict[str, Any], minimal_bundle: dict[str, Any]
+) -> None:
+    """The chain is constrained empty, so a bundle claiming a hop is refused at load
+    rather than accepted with lineage nothing can verify."""
+    # A schema-shaped hop, so the refusal is `maxItems: 0` and not a type mismatch —
+    # a plain string would be rejected whether or not the chain were constrained.
+    bad = dict(
+        minimal_bundle,
+        delegation_chain=[{"id": "spiffe://example.org/agent/coordinator", "type": "agent"}],
+    )
     with pytest.raises(ValidationError):
         Draft202012Validator(schema).validate(bad)

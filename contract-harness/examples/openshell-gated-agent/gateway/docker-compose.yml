@@ -11,7 +11,9 @@
 
 services:
   gateway:
-    image: ghcr.io/nvidia/openshell/gateway:${IMAGE_TAG:-latest}
+    # Moves with the `pipx:openshell` pin in mise.toml: the gateway and the CLI driving it
+    # run the same version. Override with IMAGE_TAG to try another.
+    image: ghcr.io/nvidia/openshell/gateway:${IMAGE_TAG:-0.0.111}
     restart: unless-stopped
     # Clear the image's default CMD so gateway.toml owns all settings.
     command: []

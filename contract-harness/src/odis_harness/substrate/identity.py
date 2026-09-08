@@ -1,9 +1,8 @@
 """AgentRuntimeCredential + identity provider Protocols.
 
-These types describe what a real workload-identity provider (SPIFFE,
-k8s SAT, a cloud workload-identity token, HW-attested) would *issue* and what a
-real sponsor-identity provider (Entra/OIDC) would surface. The substrate
-*consumes* both; it does not issue either.
+What a workload-identity provider (SPIFFE, k8s SAT, a cloud workload-identity
+token, HW-attested) would *issue*, and what an originating-principal source
+(Entra/OIDC) would surface. The Router consumes both; it issues neither.
 """
 
 from __future__ import annotations
@@ -26,8 +25,13 @@ class AgentRuntimeCredential:
 
 
 @dataclass(frozen=True, kw_only=True)
-class SponsorIdentity:
-    """The Entra/OIDC-shaped sponsor identity the substrate trusts."""
+class OriginatingPrincipal:
+    """ODIS §6.3's originating principal: the authenticated human or service principal
+    whose authority initiated this task.
+
+    Distinct from the agent's `sponsor_ref` / `owner_ref`, which are registration-time
+    accountability fields on an Agent Registration Record (§6.1) and are not modelled here.
+    """
 
     id: str
     type: str  # "entra_oidc", "saml", "local", etc.
@@ -36,23 +40,24 @@ class SponsorIdentity:
 class WorkloadIdentityProvider(Protocol):
     """Passport — issues short-lived runtime credentials.
 
-    Real candidates: SPIFFE SVID, Kubernetes SAT, a cloud workload-identity
+    Candidates: SPIFFE SVID, Kubernetes SAT, a cloud workload-identity
     token, a hardware-attested token. The substrate consumes; it does not issue.
     """
 
-    def issue(self, sponsor_id: str, agent_id: str) -> AgentRuntimeCredential: ...
+    def issue(self, principal_id: str, agent_id: str) -> AgentRuntimeCredential: ...
 
 
-class SponsorIdentityProvider(Protocol):
-    """The Entra/OIDC source. Distinct Protocol from WorkloadIdentityProvider
-    because deployments often substitute one without the other."""
+class OriginatingPrincipalProvider(Protocol):
+    """The Entra/OIDC source. A separate Protocol from WorkloadIdentityProvider because
+    deployments often substitute one without the other: who is running is established by
+    attestation, on whose authority by delegation."""
 
-    def current_sponsor(self) -> SponsorIdentity: ...
+    def current_principal(self) -> OriginatingPrincipal: ...
 
 
 __all__ = [
     "AgentRuntimeCredential",
-    "SponsorIdentity",
-    "SponsorIdentityProvider",
+    "OriginatingPrincipal",
+    "OriginatingPrincipalProvider",
     "WorkloadIdentityProvider",
 ]

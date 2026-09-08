@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://apf.local/schemas/odis.runtime.context.v1.json",
+  "$id": "urn:odis:contract-harness:schemas:odis.runtime.context.v1",
   "title": "odis.runtime.context.v1",
-  "description": "Trusted runtime context envelope. Mirrors APF §6.1; populated by the substrate, consumed by the MCP adapter when building an authz request. Caller-supplied subject fields are discarded by the substrate; nothing in this envelope is sourced from the agent's call payload.",
+  "description": "Trusted runtime context envelope. Mirrors APF \u00a76.1; populated by the substrate, consumed by the MCP adapter when building an authz request. Caller-supplied subject fields are discarded by the substrate; nothing in this envelope is sourced from the agent's call payload.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -12,7 +12,7 @@
     "bundle_version",
     "trust_root_id",
     "policy_digest",
-    "sponsor",
+    "originating_principal",
     "agent",
     "task_intent",
     "target_resource",
@@ -32,29 +32,27 @@
     },
     "bundle_id": {
       "type": "string",
-      "const": "odis-fixture-bundle",
-      "description": "Stub policy metadata; not a real signed bundle id."
+      "description": "Identifier of the Authority Grant this envelope was produced under. Carried from the loaded grant, not pinned: an envelope must name the grant actually in force.",
+      "minLength": 1
     },
     "bundle_version": {
       "type": "string",
-      "const": "0.0.0-odis-harness"
+      "minLength": 1,
+      "description": "Version of the Authority Grant in force. Carried from the loaded grant, not pinned: an envelope must name the grant actually in force."
     },
     "trust_root_id": {
       "type": "string",
-      "const": "odis-fixture-trust-root"
+      "minLength": 1,
+      "description": "Trust anchor the grant's signature chains to. Carried from the loaded grant, not pinned: an envelope must name the grant actually in force."
     },
     "policy_digest": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$",
       "description": "SHA-256 hex of the canonicalized policy bundle (the policy_digest binding)."
     },
-    "sponsor": {
-      "$ref": "#/$defs/Identity",
-      "description": "Source: SponsorIdentityProvider (apf-openshell-containment), not the agent payload."
-    },
     "agent": {
       "$ref": "#/$defs/Identity",
-      "description": "Source: WorkloadIdentityProvider (apf-openshell-containment), not the agent payload."
+      "description": "The caller identity the Router acted for. On an authenticated surface `id` is the subject of a credential the Router validated; otherwise it is the unauthenticated fallback. `type` says which, so a consumer never has to guess. Never taken from the tool-call payload."
     },
     "task_intent": {
       "type": "string",
@@ -71,13 +69,20 @@
     "phase": {
       "type": "string",
       "const": "odis-harness"
+    },
+    "originating_principal": {
+      "$ref": "#/$defs/Identity",
+      "description": "ODIS \u00a76.3: the authenticated principal whose authority initiated this task. Sourced from the OriginatingPrincipalProvider, never from the agent payload. Distinct from the agent's accountable sponsor or owner, which live on an Agent Registration Record this harness does not implement."
     }
   },
   "$defs": {
     "Identity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "type"],
+      "required": [
+        "id",
+        "type"
+      ],
       "properties": {
         "id": {
           "type": "string",
@@ -93,17 +98,14 @@
     "ResourceRef": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["resource_family"],
+      "required": [
+        "resource_family"
+      ],
       "properties": {
         "resource_family": {
           "type": "string",
           "minLength": 1,
           "description": "Key into the signed bundle's per-family routing (e.g., 'jira')."
-        },
-        "instance_id": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Provider-specific instance handle (e.g., a Jira issue key like 'APF-123')."
         }
       }
     }

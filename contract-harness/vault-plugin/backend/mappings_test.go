@@ -15,6 +15,26 @@ const (
 		`"policy":{"rules":[{"verb":"update_issue","allow_fields":["labels"]}]},"default_mode":"strict"}}}`
 )
 
+// writeMappingAs writes a mapping as an authenticated Vault caller. Every real
+// request carries the writer's identity, which the handler records as the mapping's
+// delegating principal; a bare request carries none and is refused.
+func writeMappingAs(
+	t *testing.T, b logical.Backend, s logical.Storage, path string, data map[string]any,
+) *logical.Response {
+	t.Helper()
+	resp, err := b.HandleRequest(context.Background(), &logical.Request{
+		Operation: logical.UpdateOperation,
+		Path:      path,
+		Storage:   s,
+		Data:      data,
+		EntityID:  "e-test-writer",
+	})
+	if err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+	return resp
+}
+
 // grantForFamily builds a single-family grant JSON for a collision test.
 func grantForFamily(family string) string {
 	return `{"bundle_id":"b","bundle_version":"1","trust_root_id":"r","families":{` +
@@ -30,12 +50,12 @@ func TestWriteMappingRejectsSameFamilyCollision(t *testing.T) {
 	t.Parallel()
 	b, s := newTestBackend(t)
 
-	if resp := write(t, b, s, "mappings/a", map[string]any{
+	if resp := writeMappingAs(t, b, s, "mappings/a", map[string]any{
 		"bound_subject": "spiffe://example.org/agent", "bundle": grantForFamily("jira-prod"),
 	}); resp.IsError() {
 		t.Fatalf("first mapping rejected: %v", resp.Error())
 	}
-	resp := write(t, b, s, "mappings/b", map[string]any{
+	resp := writeMappingAs(t, b, s, "mappings/b", map[string]any{
 		"bound_subject": "spiffe://example.org/agent", "bundle": grantForFamily("jira-prod"),
 	})
 	if resp == nil || !resp.IsError() {
@@ -50,12 +70,12 @@ func TestWriteMappingRejectsPrefixCoversSubjectCollision(t *testing.T) {
 	t.Parallel()
 	b, s := newTestBackend(t)
 
-	if resp := write(t, b, s, "mappings/a", map[string]any{
+	if resp := writeMappingAs(t, b, s, "mappings/a", map[string]any{
 		"bound_subject_prefix": "spiffe://example.org/agent/", "bundle": grantForFamily("jira-prod"),
 	}); resp.IsError() {
 		t.Fatalf("prefix mapping rejected: %v", resp.Error())
 	}
-	resp := write(t, b, s, "mappings/b", map[string]any{
+	resp := writeMappingAs(t, b, s, "mappings/b", map[string]any{
 		"bound_subject": "spiffe://example.org/agent/jira", "bundle": grantForFamily("jira-prod"),
 	})
 	if resp == nil || !resp.IsError() {
@@ -70,12 +90,12 @@ func TestWriteMappingAcceptsDisjointSubjects(t *testing.T) {
 	t.Parallel()
 	b, s := newTestBackend(t)
 
-	if resp := write(t, b, s, "mappings/a", map[string]any{
+	if resp := writeMappingAs(t, b, s, "mappings/a", map[string]any{
 		"bound_subject": "spiffe://example.org/agent-1", "bundle": grantForFamily("jira-prod"),
 	}); resp.IsError() {
 		t.Fatalf("first mapping rejected: %v", resp.Error())
 	}
-	if resp := write(t, b, s, "mappings/b", map[string]any{
+	if resp := writeMappingAs(t, b, s, "mappings/b", map[string]any{
 		"bound_subject": "spiffe://example.org/agent-2", "bundle": grantForFamily("jira-prod"),
 	}); resp.IsError() {
 		t.Errorf("disjoint exact subjects must be accepted (not co-satisfiable): %v", resp.Error())
@@ -88,12 +108,12 @@ func TestWriteMappingAcceptsDisjointFamilies(t *testing.T) {
 	t.Parallel()
 	b, s := newTestBackend(t)
 
-	if resp := write(t, b, s, "mappings/a", map[string]any{
+	if resp := writeMappingAs(t, b, s, "mappings/a", map[string]any{
 		"bound_subject": "spiffe://example.org/agent", "bundle": grantForFamily("jira-prod"),
 	}); resp.IsError() {
 		t.Fatalf("first mapping rejected: %v", resp.Error())
 	}
-	if resp := write(t, b, s, "mappings/b", map[string]any{
+	if resp := writeMappingAs(t, b, s, "mappings/b", map[string]any{
 		"bound_subject": "spiffe://example.org/agent", "bundle": grantForFamily("github"),
 	}); resp.IsError() {
 		t.Errorf("disjoint families must be accepted (no shared family to collide): %v", resp.Error())
@@ -107,12 +127,12 @@ func TestWriteMappingAcceptsConflictingClaim(t *testing.T) {
 	t.Parallel()
 	b, s := newTestBackend(t)
 
-	if resp := write(t, b, s, "mappings/a", map[string]any{
+	if resp := writeMappingAs(t, b, s, "mappings/a", map[string]any{
 		"bound_claims": "team=alpha", "bundle": grantForFamily("jira-prod"),
 	}); resp.IsError() {
 		t.Fatalf("first mapping rejected: %v", resp.Error())
 	}
-	if resp := write(t, b, s, "mappings/b", map[string]any{
+	if resp := writeMappingAs(t, b, s, "mappings/b", map[string]any{
 		"bound_claims": "team=beta", "bundle": grantForFamily("jira-prod"),
 	}); resp.IsError() {
 		t.Errorf("a conflicting claim value makes the selectors disjoint; must be accepted: %v", resp.Error())
@@ -126,12 +146,12 @@ func TestWriteMappingAcceptsSelfUpdate(t *testing.T) {
 	t.Parallel()
 	b, s := newTestBackend(t)
 
-	if resp := write(t, b, s, "mappings/a", map[string]any{
+	if resp := writeMappingAs(t, b, s, "mappings/a", map[string]any{
 		"bound_subject": "spiffe://example.org/agent", "bundle": grantForFamily("jira-prod"),
 	}); resp.IsError() {
 		t.Fatalf("first write rejected: %v", resp.Error())
 	}
-	if resp := write(t, b, s, "mappings/a", map[string]any{
+	if resp := writeMappingAs(t, b, s, "mappings/a", map[string]any{
 		"bound_subject": "spiffe://example.org/agent", "bundle": grantForFamily("jira-prod"),
 	}); resp.IsError() {
 		t.Errorf("re-writing the same mapping must be accepted (self-update, name excluded): %v", resp.Error())
@@ -145,7 +165,7 @@ func TestWriteMappingRejectsBothSubjectAndPrefix(t *testing.T) {
 	t.Parallel()
 	b, s := newTestBackend(t)
 
-	resp := write(t, b, s, "mappings/both", map[string]any{
+	resp := writeMappingAs(t, b, s, "mappings/both", map[string]any{
 		"bound_subject":        "spiffe://example.org/agent",
 		"bound_subject_prefix": "spiffe://example.org/",
 		"bundle":               grantForFamily("jira-prod"),
@@ -154,12 +174,12 @@ func TestWriteMappingRejectsBothSubjectAndPrefix(t *testing.T) {
 		t.Error("expected rejection: a mapping may set bound_subject or bound_subject_prefix, not both")
 	}
 
-	if resp := write(t, b, s, "mappings/subject-only", map[string]any{
+	if resp := writeMappingAs(t, b, s, "mappings/subject-only", map[string]any{
 		"bound_subject": "spiffe://example.org/agent", "bundle": grantForFamily("jira-prod"),
 	}); resp.IsError() {
 		t.Errorf("bound_subject alone must be accepted: %v", resp.Error())
 	}
-	if resp := write(t, b, s, "mappings/prefix-only", map[string]any{
+	if resp := writeMappingAs(t, b, s, "mappings/prefix-only", map[string]any{
 		"bound_subject_prefix": "spiffe://example.org/team/", "bundle": grantForFamily("github"),
 	}); resp.IsError() {
 		t.Errorf("bound_subject_prefix alone must be accepted: %v", resp.Error())
@@ -171,7 +191,7 @@ func TestMappingCRUDRoundTrip(t *testing.T) {
 	t.Parallel()
 	b, s := newTestBackend(t)
 
-	resp := write(t, b, s, testMappingPath, map[string]any{
+	resp := writeMappingAs(t, b, s, testMappingPath, map[string]any{
 		"bound_issuer":    "https://fixture.issuer.odis.local/",
 		"bound_audiences": "apf-bundle-issuer",
 		"bound_subject":   "spiffe://example.org/agent",
@@ -219,7 +239,7 @@ func TestMappingCRUDRoundTrip(t *testing.T) {
 func TestMappingRequiresFamily(t *testing.T) {
 	t.Parallel()
 	b, s := newTestBackend(t)
-	resp := write(t, b, s, testMappingPath, map[string]any{
+	resp := writeMappingAs(t, b, s, testMappingPath, map[string]any{
 		"bundle": `{"bundle_id":"x","bundle_version":"1","trust_root_id":"r","families":{}}`,
 	})
 	if !resp.IsError() {
@@ -231,7 +251,7 @@ func TestMappingRequiresFamily(t *testing.T) {
 func TestMappingRejectsInvalidJSON(t *testing.T) {
 	t.Parallel()
 	b, s := newTestBackend(t)
-	resp := write(t, b, s, testMappingPath, map[string]any{"bundle": "not json"})
+	resp := writeMappingAs(t, b, s, testMappingPath, map[string]any{"bundle": "not json"})
 	if !resp.IsError() {
 		t.Error("expected an error response for invalid bundle JSON")
 	}
@@ -242,7 +262,7 @@ func TestMappingRejectsInvalidJSON(t *testing.T) {
 func TestMappingRejectsZeroConstraint(t *testing.T) {
 	t.Parallel()
 	b, s := newTestBackend(t)
-	resp := write(t, b, s, testMappingPath, map[string]any{"bundle": testBundleJSON})
+	resp := writeMappingAs(t, b, s, testMappingPath, map[string]any{"bundle": testBundleJSON})
 	if !resp.IsError() {
 		t.Error("expected an error response for a mapping with no bound_* constraints")
 	}
@@ -256,7 +276,7 @@ func TestMappingRejectsPermissiveZeroRuleFamily(t *testing.T) {
 	grantJSON := `{"bundle_id":"b","bundle_version":"1","trust_root_id":"r","families":{` +
 		`"jira-prod":{"vendor_mcp":{"endpoint_id":"e","url":"https://v/"},` +
 		`"policy":{"rules":[]},"default_mode":"permissive"}}}`
-	resp := write(t, b, s, testMappingPath, map[string]any{
+	resp := writeMappingAs(t, b, s, testMappingPath, map[string]any{
 		"bound_subject": "spiffe://example.org/agent", "bundle": grantJSON,
 	})
 	if !resp.IsError() {
@@ -273,7 +293,7 @@ func TestMappingAcceptsSafeZeroRuleAndPolicedPermissive(t *testing.T) {
 	strictZero := `{"bundle_id":"b","bundle_version":"1","trust_root_id":"r","families":{` +
 		`"jira-prod":{"vendor_mcp":{"endpoint_id":"e","url":"https://v/"},` +
 		`"policy":{"rules":[]},"default_mode":"strict"}}}`
-	if resp := write(t, b, s, "mappings/strict-zero", map[string]any{
+	if resp := writeMappingAs(t, b, s, "mappings/strict-zero", map[string]any{
 		"bound_subject": "spiffe://example.org/strict", "bundle": strictZero,
 	}); resp.IsError() {
 		t.Errorf("strict zero-rule family was rejected: %v", resp.Error())
@@ -282,7 +302,7 @@ func TestMappingAcceptsSafeZeroRuleAndPolicedPermissive(t *testing.T) {
 	permissivePoliced := `{"bundle_id":"b","bundle_version":"1","trust_root_id":"r","families":{` +
 		`"jira-prod":{"vendor_mcp":{"endpoint_id":"e","url":"https://v/"},` +
 		`"policy":{"rules":[{"verb":"update_issue","allow_fields":["labels"]}]},"default_mode":"permissive"}}}`
-	if resp := write(t, b, s, "mappings/permissive-policed", map[string]any{
+	if resp := writeMappingAs(t, b, s, "mappings/permissive-policed", map[string]any{
 		"bound_subject": "spiffe://example.org/permissive", "bundle": permissivePoliced,
 	}); resp.IsError() {
 		t.Errorf("permissive family with a rule was rejected: %v", resp.Error())

@@ -15,19 +15,37 @@ opa = "latest"
 _.python.venv = { path = ".venv", create = true }
 
 [tasks.install]
-description = "Install project (editable) + dev dependency group into the project venv"
-run = [
-    "uv pip install -e .",
-    "uv pip install --group dev",
-]
+# `uv sync --locked`, NOT `uv pip install`: `uv pip install` ignores uv.lock, and every
+# dependency here is an open lower bound (mcp, ruff, starlette, ...), so it resolves to
+# whatever is newest at clone time and drifts across majors. `--locked` installs the
+# committed resolution and fails loudly when pyproject.toml disagrees with it.
+description = "Install the locked project + dev dependency group into the project venv"
+run = "uv sync --locked"
 
 [tasks.demo]
 description = "Run the zero-infrastructure Router demo against an in-process Target MCP stub"
 env = { ODIS_AUDIT_OUTPUT = "/tmp/odis-demo-audit.jsonl" }
-run = "odis-harness demo"
+# The grant choice is explicit by design: the example bundle carries no signature, so
+# this demo says it is accepting an unverified one. `demo-signed` is the verified path.
+run = "odis-harness demo --trust-bundle-unverified"
 
 [tasks.test]
-description = "Run the pytest suite hermetically"
+# `go` is a tool rather than a `depends` on the build task, so nothing is built
+# unconditionally. `conftest`'s `plugin_current()` detects a plugin binary older than its
+# sources, and `DevVault.build_plugin` rebuilds it — but only from the `dev_vault`
+# fixture, which runs only when `vault` resolves. So the rebuild happens exactly when the
+# Vault slice is about to exercise the binary, and never on a machine where that slice
+# skips. Without this the stale binary is skipped rather than rebuilt, which hides it.
+description = "Run the pytest suite (rebuilds a stale Vault plugin only when the slice runs)"
+tools = { go = "1.25" }
+run = "pytest"
+
+[tasks.test-all]
+# Pins `vault` for this task so the slice is reachable on a machine where it is not
+# already on PATH; `test` covers the plugin build for both.
+description = "Run the pytest suite with the Vault slice reachable (vault + built plugin)"
+depends = ["build-vault-plugin"]
+tools = { vault = "latest" }
 run = "pytest"
 
 [tasks.typecheck]
@@ -39,12 +57,14 @@ description = "Run ruff lint"
 run = "ruff check src tests examples"
 
 [tasks.check]
-description = "Run lint + typecheck + tests (Python; check-all adds the Go plugin suite)"
+description = "Run lint + typecheck + tests (Python; check-all adds the Vault slice and the Go plugin suite)"
 depends = ["lint", "typecheck", "test"]
 
 [tasks.check-all]
-description = "check plus the Go vault-plugin lint + tests (Go tooling installs on demand)"
-depends = ["check", "lint-vault-plugin", "test-vault-plugin"]
+# Depends on the individual gates rather than `check` so pytest runs once (as
+# test-all, the superset) instead of twice.
+description = "Everything: lint + typecheck + full pytest (incl. Vault slice) + Go plugin lint/tests"
+depends = ["lint", "typecheck", "test-all", "lint-vault-plugin", "test-vault-plugin"]
 
 [tasks.build-vault-plugin]
 description = "Build the apf-bundle-issuer Vault plugin binary into vault-plugin/dist/"
@@ -64,8 +84,15 @@ dir = "vault-plugin"
 tools = { go = "1.25" }
 run = "go test ./..."
 
+[tasks.demo-signed]
+description = "Demo with a VAULT-ISSUED grant whose Ed25519 signature is verified offline — same Router, gate and scenarios as `demo`, one axis changed"
+depends = ["build-vault-plugin"]
+tools = { vault = "latest" }
+env = { ODIS_AUDIT_OUTPUT = "/tmp/odis-demo-signed-audit.jsonl" }
+run = "bash vault/demo-signed.sh"
+
 [tasks.smoke-vault]
-description = "Boot dev Vault, provision, issue + offline-verify a bundle (vault auto-provisioned; ODIS_VAULT_BIN overrides)"
+description = "ISSUANCE smoke test (not a demo — no Router, no gate): boot dev Vault, provision, issue + offline-verify a bundle. For a signed grant feeding a real gate, see demo-openshell"
 depends = ["build-vault-plugin"]
 tools = { vault = "latest" }
 run = "bash vault/smoke.sh"
@@ -114,13 +141,15 @@ run = "bash configure-signing.sh"
 [tasks.demo-openshell]
 description = "OpenShell-gated demo: agent inside a REAL OpenShell sandbox → Router gate → vendor (egress enforced). Needs the gateway up first: bash examples/openshell-gated-agent/gateway/setup.sh"
 depends = ["build-vault-plugin"]
-tools = { vault = "latest", "pipx:openshell" = "latest" }
+# Moves with the gateway image pin in examples/openshell-gated-agent/gateway/docker-compose.yml:
+# the CLI and the gateway it drives run the same version.
+tools = { vault = "latest", "pipx:openshell" = "0.0.111" }
 env = { ODIS_AUDIT_OUTPUT = "/tmp/odis-openshell-audit.jsonl" }
 run = "python examples/openshell-gated-agent/openshell_demo.py"
 
 [tasks.openshell-connect]
 description = "Register or select the local OpenShell gateway and show its connection status"
-tools = { "pipx:openshell" = "latest" }
+tools = { "pipx:openshell" = "0.0.111" }
 run = """
 if ! openshell gateway info --gateway odis >/dev/null 2>&1; then
     openshell gateway add http://localhost:8080 --local --name odis

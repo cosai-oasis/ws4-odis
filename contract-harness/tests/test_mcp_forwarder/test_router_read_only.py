@@ -1,82 +1,49 @@
 """Router action-limit behavior for read-only policed tools.
 
-These tests avoid the real OPA subprocess. The policy result is fixed so the
-coverage is specifically on Router.forward's post-policy action-limit gate.
+These tests avoid the OPA subprocess: the policy result is fixed via
+`factories.AllowAllPolicyEvaluator`, so the coverage is specifically on
+`Router.forward`'s post-policy action-limit gate.
 """
 
 from __future__ import annotations
 
 import asyncio
+from typing import TYPE_CHECKING
 
 import pytest
 
-from odis_harness.bundle import Bundle, Family, ToolPolicy, VendorMcp
-from odis_harness.mcp_forwarder.identity import RuntimeContextFactory
-from odis_harness.mcp_forwarder.policy import PolicyDecision
 from odis_harness.mcp_forwarder.router import McpRefusal, Router
-from odis_harness.mcp_forwarder.vendor_client import (
-    InMemoryMcpClient,
-    ToolDescriptor,
-    ToolResult,
-)
-from odis_harness.substrate.fixtures import (
-    FixtureSponsorIdentityProvider,
-    FixtureWorkloadIdentityProvider,
-)
+from tests import factories
+
+if TYPE_CHECKING:
+    from odis_harness.bundle import Family
+    from odis_harness.fixtures.vendor import InMemoryMcpClient
 
 pytestmark = pytest.mark.enable_socket
 
-
-class _CapturingAuditSink:
-    def __init__(self) -> None:
-        self.events: list[object] = []
-
-    def emit(self, event: object) -> None:
-        self.events.append(event)
+_FAMILY = "gitlab-readonly"
 
 
-class _AllowPolicyEvaluator:
-    def evaluate(self, _family: Family, _request: object) -> PolicyDecision:
-        return PolicyDecision(
-            decision="allow",
-            obligations={},
-            reason_code="",
-            decision_id="decision-1",
-        )
-
-
-def _event_types(sink: _CapturingAuditSink) -> list[str]:
-    return [e.event_type for e in sink.events]  # type: ignore[attr-defined]
-
-
-def _family(action_limits_by_tool: dict[str, dict[str, object]]) -> Family:
-    return Family(
-        vendor_mcp=VendorMcp(endpoint_id="gitlab-readonly", url="https://x.invalid/"),
+def _router(
+    action_limits_by_tool: dict[str, dict[str, object]],
+    *,
+    vendor: InMemoryMcpClient,
+    audit: factories.CapturingAuditSink,
+) -> tuple[Router, Family]:
+    """A Router whose policy always allows, so action limits are the only gate."""
+    family = factories.family(
         policy="package odis_policy\n",
-        tools={
-            tool: ToolPolicy(action_limits=action_limits)
-            for tool, action_limits in action_limits_by_tool.items()
-        },
-        default_mode="strict",
+        action_limits_by_tool=action_limits_by_tool,
+        endpoint_id=_FAMILY,
     )
-
-
-def _router(family: Family, client: InMemoryMcpClient, audit: _CapturingAuditSink) -> Router:
-    return Router(
-        bundle=Bundle(
-            bundle_id="b",
-            bundle_version="0.1.0",
-            trust_root_id="r",
-            families={"gitlab-readonly": family},
-        ),
-        policy_evaluator=_AllowPolicyEvaluator(),  # type: ignore[arg-type]
-        context_factory=RuntimeContextFactory(
-            workload_identity=FixtureWorkloadIdentityProvider(),
-            sponsor_provider=FixtureSponsorIdentityProvider(),
-        ),
-        audit=audit,  # type: ignore[arg-type]
-        vendor_clients={"gitlab-readonly": client},
+    router = factories.router(
+        factories.bundle(families={_FAMILY: family}),
+        opa_binary="",
+        audit=audit,
+        vendor=vendor,
+        policy_evaluator=factories.AllowAllPolicyEvaluator(),
     )
+    return router, family
 
 
 @pytest.fixture
@@ -94,17 +61,13 @@ def test_forward_policed_read_only_tool_allows_empty_obligations(
 ) -> None:
     """A policed read/list tool can have no post-policy action-limit enforcer."""
     del inline_policy_eval
-    audit = _CapturingAuditSink()
-    family = _family({"gitlab_health": {}})
-    client = InMemoryMcpClient(
-        tools=[ToolDescriptor(name="gitlab_health", description="", input_schema={})],
-        responses={"gitlab_health": ToolResult(content=[{"type": "text", "text": "ok"}])},
-    )
-    router = _router(family, client, audit)
-    result = asyncio.run(router.forward("gitlab-readonly", family, "gitlab_health", {}))
+    audit = factories.CapturingAuditSink()
+    vendor = factories.in_memory_vendor(tools={"gitlab_health": "ok"})
+    router, family = _router({"gitlab_health": {}}, vendor=vendor, audit=audit)
+    result = asyncio.run(router.forward(_FAMILY, family, "gitlab_health", {}))
     assert result.content == [{"type": "text", "text": "ok"}]
-    assert client.calls == [("gitlab_health", {})]
-    assert _event_types(audit) == ["odis.mcp.forward"]
+    assert vendor.calls == [("gitlab_health", {})]
+    assert audit.event_types == ["odis.mcp.forward"]
 
 
 def test_forward_declared_constraints_still_require_an_enforcer(
@@ -112,17 +75,13 @@ def test_forward_declared_constraints_still_require_an_enforcer(
 ) -> None:
     """A constrained tool without an action-limit enforcer still fails closed."""
     del inline_policy_eval
-    audit = _CapturingAuditSink()
-    family = _family({"transition_issue": {"allowed_fields": ["status"]}})
-    client = InMemoryMcpClient(
-        tools=[ToolDescriptor(name="transition_issue", description="", input_schema={})],
-        responses={"transition_issue": ToolResult(content=[])},
+    audit = factories.CapturingAuditSink()
+    vendor = factories.in_memory_vendor(tools={"transition_issue": "ok"})
+    router, family = _router(
+        {"transition_issue": {"allowed_fields": ["status"]}}, vendor=vendor, audit=audit
     )
-    router = _router(family, client, audit)
     with pytest.raises(McpRefusal) as exc:
-        asyncio.run(
-            router.forward("gitlab-readonly", family, "transition_issue", {"issue_key": "APF-1"})
-        )
+        asyncio.run(router.forward(_FAMILY, family, "transition_issue", {"issue_key": "APF-1"}))
     assert exc.value.reason_code == "unenforceable_tool"
-    assert client.calls == []
-    assert _event_types(audit) == ["odis.mcp.forward_refused"]
+    assert vendor.calls == []
+    assert audit.event_types == ["odis.mcp.forward_refused"]

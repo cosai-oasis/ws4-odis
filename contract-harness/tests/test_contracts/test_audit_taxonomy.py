@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from odis_harness.contracts.audit_taxonomy import (
@@ -12,13 +10,6 @@ from odis_harness.contracts.audit_taxonomy import (
     is_valid_event_type,
 )
 from odis_harness.contracts.validator import EnvelopeValidationError, EnvelopeValidator
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-
-
-@pytest.fixture(scope="module")
-def envelope_validator() -> EnvelopeValidator:
-    return EnvelopeValidator(_REPO_ROOT / "schemas")
 
 
 def _audit_event(event_type: str) -> dict[str, object]:
@@ -77,6 +68,7 @@ def test_odis_extension_types() -> None:
                 "odis.mcp.forward",
                 "odis.mcp.forward_refused",
                 "odis.mcp.discovery_failed",
+        "odis.bridge.terminal_exchange",
             }
         )
         == ODIS_EXTENSION_TYPES

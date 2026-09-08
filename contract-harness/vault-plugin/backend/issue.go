@@ -101,13 +101,16 @@ func (b *backend) mapAndAssemble(
 	}
 	bundle, err := b.resolveBundle(ctx, req.Storage, mappings, identity)
 	if errors.Is(err, errNoAuthorizedBundle) {
-		// Genuine authorization-absence: an empty union (no assigned grant) or a
-		// ceiling that caps every family away. A client 4xx, no server log.
+		// Genuine authorization-absence: an empty union (no assigned grant), a record
+		// that confers nothing (suspended / revoked / pending / past its valid_until),
+		// a token with no subject to record as the delegation actor, or a ceiling that
+		// caps every family away. A client 4xx, no server log.
 		return nil, logical.ErrorResponse("no authorized bundle for this identity"), nil
 	}
 	if err != nil {
-		// A real failure: a same-family collision, an envelope conflict, an empty
-		// envelope, a ceiling read/lookup failure, or a policy that fails to compile.
+		// A real failure: a same-family collision, an envelope conflict (including two
+		// operators delegating to one identity), an empty envelope, a superseded
+		// mapping record, a storage read failure, or a policy that fails to compile.
 		// Log it and return a generic 5xx rather than masking it as a silent 4xx.
 		b.Logger().Error("apf-bundle-issuer: resolve bundle", "error", err)
 		return nil, nil, errIssuanceFailed

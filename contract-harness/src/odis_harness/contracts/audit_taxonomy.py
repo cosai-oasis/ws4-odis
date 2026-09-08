@@ -30,6 +30,7 @@ Extension event types:
 | odis.mcp.forward                 | Router forwarded an approved tool call    |
 | odis.mcp.forward_refused         | Router refused a tool call (see reason_code) |
 | odis.mcp.discovery_failed        | Vendor `tools/list` failed at startup     |
+| odis.bridge.terminal_exchange    | Bridge minted a Target-MCP credential (ODIS-CC-06) |
 """
 
 from __future__ import annotations
@@ -62,6 +63,7 @@ ODIS_EXTENSION_TYPES: frozenset[str] = frozenset(
         "odis.mcp.forward",
         "odis.mcp.forward_refused",
         "odis.mcp.discovery_failed",
+        "odis.bridge.terminal_exchange",
     }
 )
 

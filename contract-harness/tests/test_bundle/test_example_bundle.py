@@ -9,8 +9,8 @@ import pytest
 from odis_harness.bundle import (
     Bundle,
     BundleLoader,
-    FixtureSignatureVerifier,
 )
+from odis_harness.fixtures.signature import FixtureSignatureVerifier
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _EXAMPLE_BUNDLE = _REPO_ROOT / "policy" / "bundle.example.yaml"

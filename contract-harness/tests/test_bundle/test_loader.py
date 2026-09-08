@@ -14,10 +14,10 @@ from odis_harness.bundle.loader import (
     BundleLoader,
     BundleSchemaInvalid,
     BundleSignatureInvalid,
-    FixtureSignatureVerifier,
 )
 from odis_harness.bundle.types import Bundle
 from odis_harness.bundle.vault_verifier import VaultTransitSignatureVerifier
+from odis_harness.fixtures.signature import FixtureSignatureVerifier
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -58,7 +58,7 @@ def loader() -> BundleLoader:
 
 def test_fixture_verifier_always_accepts() -> None:
     """The fixture verifier is the do-nothing implementation used in tests
-    and the harness's local-dev mode. Real production substitutes."""
+    and the harness's local-dev mode. Production substitutes."""
     assert FixtureSignatureVerifier().verify(b"any-payload", b"any-signature") is True
 
 
@@ -212,3 +212,61 @@ def test_load_signed_raises_schema_invalid_on_bad_schema() -> None:
 
     with pytest.raises(BundleSchemaInvalid):
         BundleLoader(signature_verifier=verifier).load_signed(payload, signature)
+
+
+_ISSUED_BUNDLE_YAML = """
+bundle_id: odis-fixture-bundle
+bundle_version: 0.1.0
+trust_root_id: fixture-trust-root
+actor: spiffe://example.org/agent/jira
+originating_principal: vault:entity:e-platform
+contributing_records:
+  - name: jira
+    version: 2
+    digest: sha256:89896f50203a4a2b01404a5599245f5d1e2e264f4804e9cab0389f09b3ae97a5
+delegation_chain: []
+attenuation_profile_ref:
+  uri: urn:odis:contract-harness:attenuation-profile:v1
+  digest: sha256:bc84f75825a2de866ed4ffaa86b817bccfc1fdc2fc4d0090070812e92eeff953
+issued_at: "2026-08-27T12:00:00Z"
+expires_at: "2026-08-27T13:00:00Z"
+families:
+  jira-prod:
+    vendor_mcp:
+      endpoint_id: jira-prod-mcp-v1
+      url: https://jira-prod-mcp.internal:8443/
+      egress_mode: bridge
+    policy: |
+      package odis_policy
+    tools:
+      update_issue: {}
+    default_mode: strict
+"""
+
+
+def test_loader_reads_the_delegation_record(loader: BundleLoader, tmp_path: Path) -> None:
+    """A Vault-issued grant carries its delegation record in the signed bytes; the
+    loader must surface it, or the Router cannot enforce the expiry."""
+    path = tmp_path / "issued.yaml"
+    path.write_text(_ISSUED_BUNDLE_YAML, encoding="utf-8")
+
+    bundle = loader.load(path)
+    assert bundle.actor == "spiffe://example.org/agent/jira"
+    assert bundle.originating_principal == "vault:entity:e-platform"
+    assert bundle.contributing_records[0].name == "jira"
+    assert bundle.contributing_records[0].version == 2
+    assert bundle.delegation_chain == ()
+    assert bundle.attenuation_profile_ref is not None
+    assert bundle.attenuation_profile_ref.uri.endswith(":v1")
+    assert bundle.issued_at == "2026-08-27T12:00:00Z"
+    assert bundle.expires_at == "2026-08-27T13:00:00Z"
+    assert bundle.families["jira-prod"].vendor_mcp.egress_mode == "bridge"
+
+
+def test_loader_rejects_an_unparseable_grant_window(loader: BundleLoader, tmp_path: Path) -> None:
+    """An indeterminate window fails at load rather than at the first forward."""
+    path = tmp_path / "bad-window.yaml"
+    path.write_text(_ISSUED_BUNDLE_YAML.replace('"2026-08-27T13:00:00Z"', '"whenever"'), "utf-8")
+
+    with pytest.raises(BundleSchemaInvalid):
+        loader.load(path)

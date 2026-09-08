@@ -10,11 +10,8 @@ from __future__ import annotations
 import jwt
 import pytest
 
-from odis_harness.bridge.fixtures import (
-    FixtureTokenExchanger,
-    fixture_subject_token_provider,
-)
-from odis_harness.vault.fixtures import FixtureIdentityIssuer
+from odis_harness.fixtures.bridge import FixtureTokenExchanger, fixture_subject_token_provider
+from odis_harness.fixtures.issuer import FixtureIdentityIssuer
 
 # Async tests need the event loop's self-pipe socket (suite is --disable-socket).
 pytestmark = pytest.mark.enable_socket
@@ -55,7 +52,7 @@ async def test_exchange_token_is_short_lived() -> None:
 
 async def test_exchange_expires_at_matches_jwt_exp_to_the_second() -> None:
     """expires_at is floored to whole seconds so it equals the bearer's int `exp` claim
-    — a sub-second expires_at would make is_fresh report fresh past the real expiry."""
+    — a sub-second expires_at would make is_fresh report fresh past the expiry."""
     exchanger = FixtureTokenExchanger()
     exchanged = await exchanger.exchange(subject_token="not-a-jwt", audience="aud")
     claims = _decode(exchanged.bearer)

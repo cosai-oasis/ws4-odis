@@ -16,8 +16,18 @@ func composeTestFamily() grantFamily {
 		Policy: policydsl.PolicySpec{Rules: []policydsl.Rule{
 			{Verb: "update_issue", AllowFields: []string{"labels"}},
 		}},
-		DefaultMode: "strict",
+		DefaultMode: modeStrict,
 	}
+}
+
+// composeEntry stamps the lifecycle and accountability fields a stored record
+// carries, so a compose fixture differs from a live record only in its selectors.
+func composeEntry(entry mappingEntry) mappingEntry {
+	entry.DelegatingPrincipal = testPrincipal
+	entry.LifecycleState = lifecycleActive
+	entry.RecordVersion = 1
+	entry.GrantTTLSeconds = int(defaultGrantTTL.Seconds())
+	return entry
 }
 
 func composeGrant(trustRoot string, families map[string]grantFamily) grant {
@@ -34,16 +44,16 @@ func composeGrant(trustRoot string, families map[string]grantFamily) grant {
 func TestComposeMappingsUnionsAssignedGrants(t *testing.T) {
 	t.Parallel()
 
-	subjectGrant := mappingEntry{
+	subjectGrant := composeEntry(mappingEntry{
 		Name:         "by-subject",
 		BoundSubject: "spiffe://example.org/agent/jira",
 		Grant:        composeGrant("tr", map[string]grantFamily{"github": composeTestFamily()}),
-	}
-	groupGrant := mappingEntry{
+	})
+	groupGrant := composeEntry(mappingEntry{
 		Name:        "by-group",
 		BoundClaims: map[string]string{"group": "jira-writers"},
 		Grant:       composeGrant("tr", map[string]grantFamily{"jira-prod": composeTestFamily()}),
-	}
+	})
 	in := matchInput{
 		Issuer:    "https://issuer/",
 		Audiences: []string{"apf-bundle-issuer"},
@@ -55,14 +65,14 @@ func TestComposeMappingsUnionsAssignedGrants(t *testing.T) {
 	if err != nil {
 		t.Fatalf("composeMappings: %v", err)
 	}
-	if _, ok := got.Families["github"]; !ok {
+	if _, ok := got.grant.Families["github"]; !ok {
 		t.Errorf("union missing the subject-assigned family %q", "github")
 	}
-	if _, ok := got.Families["jira-prod"]; !ok {
+	if _, ok := got.grant.Families["jira-prod"]; !ok {
 		t.Errorf("union missing the group-assigned family %q", "jira-prod")
 	}
-	if len(got.Families) != 2 {
-		t.Errorf("got %d families, want 2 (the union)", len(got.Families))
+	if len(got.grant.Families) != 2 {
+		t.Errorf("got %d families, want 2 (the union)", len(got.grant.Families))
 	}
 }
 
@@ -71,12 +81,12 @@ func TestComposeMappingsUnionsAssignedGrants(t *testing.T) {
 func TestComposeMappingsIgnoresAmbientOnlyMappings(t *testing.T) {
 	t.Parallel()
 
-	ambient := mappingEntry{
+	ambient := composeEntry(mappingEntry{
 		Name:           "ambient",
 		BoundIssuer:    "https://issuer/",
 		BoundAudiences: []string{"apf-bundle-issuer"},
 		Grant:          composeGrant("tr", map[string]grantFamily{"jira-prod": composeTestFamily()}),
-	}
+	})
 	in := matchInput{
 		Issuer:    "https://issuer/",
 		Audiences: []string{"apf-bundle-issuer"},
@@ -87,8 +97,9 @@ func TestComposeMappingsIgnoresAmbientOnlyMappings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("composeMappings: %v", err)
 	}
-	if len(got.Families) != 0 {
-		t.Errorf("issuer/audience-only mapping conferred %d families; want 0 (ambient is never a grant)", len(got.Families))
+	if len(got.grant.Families) != 0 {
+		t.Errorf("issuer/audience-only mapping conferred %d families; want 0 (ambient is never a grant)",
+			len(got.grant.Families))
 	}
 }
 
@@ -97,16 +108,16 @@ func TestComposeMappingsIgnoresAmbientOnlyMappings(t *testing.T) {
 func TestComposeMappingsSameFamilyCollisionFailsClosed(t *testing.T) {
 	t.Parallel()
 
-	teamA := mappingEntry{
+	teamA := composeEntry(mappingEntry{
 		Name:        "team-a",
 		BoundClaims: map[string]string{"group": "a"},
 		Grant:       composeGrant("tr", map[string]grantFamily{"jira-prod": composeTestFamily()}),
-	}
-	agentB := mappingEntry{
+	})
+	agentB := composeEntry(mappingEntry{
 		Name:         "agent-b",
 		BoundSubject: "spiffe://example.org/agent/jira",
 		Grant:        composeGrant("tr", map[string]grantFamily{"jira-prod": composeTestFamily()}),
-	}
+	})
 	in := matchInput{
 		Subject: "spiffe://example.org/agent/jira",
 		Claims:  map[string]string{"group": "a"},
@@ -123,22 +134,22 @@ func TestComposeMappingsSameFamilyCollisionFailsClosed(t *testing.T) {
 func TestComposeMappingsEnvelopeConflictFailsClosed(t *testing.T) {
 	t.Parallel()
 
-	bySubject := mappingEntry{
+	bySubject := composeEntry(mappingEntry{
 		Name:         "by-subject",
 		BoundSubject: "spiffe://example.org/agent/jira",
 		Grant: grant{
 			BundleID: "bundle-a", BundleVersion: "1", TrustRootID: "tr",
 			Families: map[string]grantFamily{"jira-prod": composeTestFamily()},
 		},
-	}
-	byGroup := mappingEntry{
+	})
+	byGroup := composeEntry(mappingEntry{
 		Name:        "by-group",
 		BoundClaims: map[string]string{"group": "g"},
 		Grant: grant{
 			BundleID: "bundle-b", BundleVersion: "1", TrustRootID: "tr",
 			Families: map[string]grantFamily{"github": composeTestFamily()},
 		},
-	}
+	})
 	in := matchInput{
 		Subject: "spiffe://example.org/agent/jira",
 		Claims:  map[string]string{"group": "g"},
@@ -155,14 +166,14 @@ func TestComposeMappingsEnvelopeConflictFailsClosed(t *testing.T) {
 func TestComposeMappingsEmptyEnvelopeFailsClosed(t *testing.T) {
 	t.Parallel()
 
-	bySubject := mappingEntry{
+	bySubject := composeEntry(mappingEntry{
 		Name:         "by-subject",
 		BoundSubject: "spiffe://example.org/agent/jira",
 		Grant: grant{
 			BundleID: "b", BundleVersion: "1", TrustRootID: "", // empty trust root
 			Families: map[string]grantFamily{"jira-prod": composeTestFamily()},
 		},
-	}
+	})
 	in := matchInput{Subject: "spiffe://example.org/agent/jira"}
 
 	if _, err := composeMappings([]mappingEntry{bySubject}, in); !errors.Is(err, errEmptyEnvelope) {
@@ -175,16 +186,16 @@ func TestComposeMappingsEmptyEnvelopeFailsClosed(t *testing.T) {
 func TestComposeMappingsTrustRootConflictFailsClosed(t *testing.T) {
 	t.Parallel()
 
-	bySubject := mappingEntry{
+	bySubject := composeEntry(mappingEntry{
 		Name:         "by-subject",
 		BoundSubject: "spiffe://example.org/agent/jira",
 		Grant:        composeGrant("tr-1", map[string]grantFamily{"jira-prod": composeTestFamily()}),
-	}
-	byGroup := mappingEntry{
+	})
+	byGroup := composeEntry(mappingEntry{
 		Name:        "by-group",
 		BoundClaims: map[string]string{"group": "g"},
 		Grant:       composeGrant("tr-2", map[string]grantFamily{"github": composeTestFamily()}),
-	}
+	})
 	in := matchInput{
 		Subject: "spiffe://example.org/agent/jira",
 		Claims:  map[string]string{"group": "g"},

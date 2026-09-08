@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://apf.local/schemas/odis.authz.request.v1.json",
+  "$id": "urn:odis:contract-harness:schemas:odis.authz.request.v1",
   "title": "odis.authz.request.v1",
-  "description": "Authorization request submitted to the RPV. Mirrors APF \u00a76.2; built by the MCP adapter from a trusted runtime context plus structured tool arguments. Subject fields come from the runtime context, not from caller-supplied tool args.",
+  "description": "Authorization request submitted to the RPV. Mirrors APF \u00a76.2; built by the MCP adapter from a trusted runtime context plus structured tool arguments. Subject fields come from the runtime context, not from caller-supplied tool args. The envelope declares no runtime-risk signal input: ODIS \u00a76.4 types `runtime_risk_signals` as authenticated signal objects the checkpoint MUST validate for issuer trust, integrity, replay resistance, freshness and subject correlation before use, and this harness consumes no such signal.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -31,15 +31,18 @@
     },
     "bundle_id": {
       "type": "string",
-      "const": "odis-fixture-bundle"
+      "minLength": 1,
+      "description": "Identifier of the Authority Grant this envelope was produced under. Carried from the loaded grant, not pinned: an envelope must name the grant actually in force."
     },
     "bundle_version": {
       "type": "string",
-      "const": "0.0.0-odis-harness"
+      "minLength": 1,
+      "description": "Version of the Authority Grant in force. Carried from the loaded grant, not pinned: an envelope must name the grant actually in force."
     },
     "trust_root_id": {
       "type": "string",
-      "const": "odis-fixture-trust-root"
+      "minLength": 1,
+      "description": "Trust anchor the grant's signature chains to. Carried from the loaded grant, not pinned: an envelope must name the grant actually in force."
     },
     "policy_digest": {
       "type": "string",
@@ -68,13 +71,6 @@
       "type": "string",
       "const": "odis-harness"
     },
-    "active_verdicts": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      },
-      "description": "Detector verdict identifiers in scope at request time. APF \u00a76.2 (MAY); not exercised in ODIS Contract Harness."
-    },
     "task_intent": {
       "type": "string",
       "minLength": 1,
@@ -86,24 +82,25 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "sponsor",
-        "agent"
+        "originating_principal",
+        "agent",
+        "delegation_chain"
       ],
       "properties": {
-        "sponsor": {
-          "$ref": "#/$defs/Identity"
-        },
         "agent": {
           "$ref": "#/$defs/Identity"
         },
         "delegation_chain": {
           "type": "array",
-          "items": {
-            "$ref": "#/$defs/Identity"
-          },
-          "description": "Parent \u2192 sub-agent attenuation chain; ODIS Exec Summary \u00a7Appendix."
+          "maxItems": 0,
+          "items": true,
+          "description": "Ordered list of prior delegation hops (ODIS \u00a76.3), empty for a root record. This implementation delegates to no sub-agent \u2014 the Router mints one principal-to-agent hop from its identity providers \u2014 so the array is constrained empty: `[]` asserts a root record where absence asserts nothing. Hop entries are not modelled, and a claimed hop is refused. \u00a76.3 requires each entry to carry, or integrity-protect a reference to, the identity and authority context needed to verify lineage and attenuation, and its chain validation requires a verifier to digest-match every parent record and check its freshness and revocation state; no revocation channel exists here. `odis.bundle.v1` constrains the same field the same way."
+        },
+        "originating_principal": {
+          "$ref": "#/$defs/Identity"
         }
-      }
+      },
+      "description": "Who the call is on behalf of. `originating_principal` is ODIS \u00a76.3's authenticated initiating principal; `agent` is the acting workload; `delegation_chain` records prior delegation hops and is empty here. All three are required: the Router mints every one of them, so an absent field would mean a Router that failed to state what it knows."
     },
     "Identity": {
       "type": "object",
@@ -131,10 +128,6 @@
       ],
       "properties": {
         "resource_family": {
-          "type": "string",
-          "minLength": 1
-        },
-        "instance_id": {
           "type": "string",
           "minLength": 1
         }

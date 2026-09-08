@@ -1,8 +1,14 @@
-"""Session-scoped fixtures + env bootstrap (per python-testing.md)."""
+"""Session-scoped fixtures + env bootstrap (per python-testing.md).
+
+Imports of harness code are deliberately deferred into the fixtures and hooks that
+need them. Collection must never abort: a module-level import here would put the whole
+harness import graph (mcp, httpx, starlette, uvicorn) between pytest and a single
+collected test, so one broken optional dependency would yield zero tests run instead
+of a targeted skip.
+"""
 
 from __future__ import annotations
 
-import shutil
 from typing import TYPE_CHECKING
 
 import pytest
@@ -11,6 +17,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from odis_harness.bundle.vault_client import VaultBundleClient
+    from odis_harness.contracts import EnvelopeValidator
     from odis_harness.vault.dev import DevVaultContext
 
 _TEST_ENV: dict[str, str] = {
@@ -35,12 +42,15 @@ def dev_vault() -> Iterator[DevVaultContext]:
     Skipped (not failed) when the vault binary or built plugin is unavailable, so
     the suite stays green in environments without them — like requires_opa.
     """
-    from odis_harness.vault.dev import DevVault, plugin_built, vault_bin  # noqa: PLC0415
+    from odis_harness.vault.dev import DevVault, plugin_current, vault_bin  # noqa: PLC0415
 
     if vault_bin() is None:
         pytest.skip("vault binary not available (set ODIS_VAULT_BIN)")
-    if not plugin_built() and not DevVault.build_plugin():
-        pytest.skip("apf-bundle-issuer plugin not built and no Go toolchain to build it")
+    # Currency, not presence: a binary older than its sources fails on the fields it
+    # does not yet emit, which looks like a code defect. Rebuilt when a toolchain is
+    # available, skipped when not.
+    if not plugin_current() and not DevVault.build_plugin():
+        pytest.skip("apf-bundle-issuer plugin stale or unbuilt, and no Go toolchain")
     with DevVault() as ctx:
         yield ctx
 
@@ -59,41 +69,34 @@ def vault_client(dev_vault: DevVaultContext) -> VaultBundleClient:
 
 
 @pytest.fixture(scope="session")
-def opa_binary() -> str:
-    """Path to the `opa` CLI.
+def envelope_validator() -> EnvelopeValidator:
+    """A validator over the repo's schemas directory.
 
-    Resolution order:
-      1. `$ODIS_OPA_BIN` environment variable (explicit override).
-      2. `shutil.which("opa")` (PATH lookup).
-      3. `../opa` next to the repo root (the location the local install
-         is currently sitting at).
-
-    If none resolve, every `@pytest.mark.requires_opa` test in the
-    session is skipped with a clear reason.
+    Session-scoped: it loads and compiles every schema at construction, so building
+    one per test is pure overhead.
     """
-    import os  # noqa: PLC0415
-    from pathlib import Path  # noqa: PLC0415
+    from tests import factories  # noqa: PLC0415 - see the module note on collection safety
 
-    candidates: list[str] = []
-    env = os.environ.get("ODIS_OPA_BIN")
-    if env:
-        candidates.append(env)
-    on_path = shutil.which("opa")
-    if on_path:
-        candidates.append(on_path)
-    sibling = Path(__file__).resolve().parents[2] / "opa"
-    candidates.append(str(sibling))
+    return factories.envelope_validator()
 
-    for candidate in candidates:
-        candidate_path = Path(candidate)
-        if candidate_path.is_file() and os.access(candidate_path, os.X_OK):
-            return str(candidate_path)
 
-    pytest.skip(
-        "opa binary not found; set ODIS_OPA_BIN, install opa on PATH, "
-        "or place the binary at ../opa relative to the harness root"
-    )
-    raise AssertionError  # unreachable; pytest.skip raises Skipped
+@pytest.fixture(scope="session")
+def opa_binary() -> str:
+    """Path to the `opa` CLI, resolved by the harness's own `resolve_opa_binary`.
+
+    Sharing the production resolver keeps the test-time and run-time lookup order
+    identical. When it resolves nothing, every `@pytest.mark.requires_opa` test in
+    the session is skipped with a clear reason.
+    """
+    from odis_harness.cli.builders import resolve_opa_binary  # noqa: PLC0415 - as above
+
+    resolved = resolve_opa_binary(None)
+    if not resolved:
+        pytest.skip(
+            "opa binary not found; set ODIS_OPA_BIN, install opa on PATH, "
+            "or place the binary beside the harness root"
+        )
+    return resolved
 
 
 def pytest_collection_modifyitems(
@@ -102,8 +105,6 @@ def pytest_collection_modifyitems(
 ) -> None:
     """Auto-skip requires_opa / requires_vault tests when their binary is absent."""
     del config  # unused
-    import os  # noqa: PLC0415
-    from pathlib import Path  # noqa: PLC0415
 
     # Defensive: if the dev-vault harness (or an optional dep it imports) is
     # unavailable, treat vault as absent and skip — never abort collection.
@@ -114,10 +115,9 @@ def pytest_collection_modifyitems(
     except ImportError:
         vault_present = False
 
-    opa_found = bool(os.environ.get("ODIS_OPA_BIN")) or bool(shutil.which("opa"))
-    if not opa_found:
-        sibling = Path(__file__).resolve().parents[1] / ".." / "opa"
-        opa_found = sibling.resolve().is_file() and os.access(sibling.resolve(), os.X_OK)
+    from odis_harness.cli.builders import resolve_opa_binary  # noqa: PLC0415 - as above
+
+    opa_found = bool(resolve_opa_binary(None))
 
     skips: list[tuple[str, pytest.MarkDecorator]] = []
     if not opa_found:

@@ -1,9 +1,9 @@
-"""apf-audit-conformance capability — audit sink, banner, HANDOFFS/CONFORMANCE artifacts.
+"""Audit — the sink every emitter writes through, and the startup banner.
 
-The second foundation of the ODIS Contract Harness: every other capability
-emits audit events through this sink, and every doc artifact (HANDOFFS.md,
-CONFORMANCE.md, the startup banner) lives here so the audit posture is
-enforced from one place.
+Every emitter writes through `AuditSink`, which derives the conformance fields, validates
+against `odis.audit.event.v1` and writes one JSON line. Centralised so the posture is
+enforced in one place: an emitter that misstates `phase` or `apf_semantic_enforcement`
+raises rather than producing a record that overstates what was enforced.
 """
 
 from odis_harness.audit.banner import BANNER_LINE, print_banner

@@ -1,4 +1,4 @@
-"""HttpMcpClient — real vendor MCP client over HTTP.
+"""HttpMcpClient — vendor MCP client over HTTP.
 
 The production `McpClient` toward a vendor MCP server, wrapping the SDK's
 Streamable HTTP client. Isolated from `vendor_client.py` (which stays
@@ -21,6 +21,12 @@ which acquires and refreshes access tokens through the authorization server.
 Production supplies a short-lived, audience-scoped provider through the Bridge.
 That token is the Router→vendor credential only; the provider credential lives
 solely in the vendor MCP server.
+
+Tracing: `call_tool` sends the call's `correlation_id` as `TRACE_HEADER_NAME` on every
+request of that call, so the trail reaches the Target MCP and does not stop at the Router
+(ODIS-CC-01, and the CC-06 clause on injecting correlation identifiers downstream). The
+header is a client-level default, which is what makes it ride the SDK's `initialize`
+handshake as well as the `tools/call` itself.
 """
 
 from __future__ import annotations
@@ -35,6 +41,7 @@ from mcp.client.streamable_http import (  # type: ignore[attr-defined]  # SDK's 
 )
 
 from odis_harness.mcp_forwarder.vendor_client import (
+    TRACE_HEADER_NAME,
     ToolDescriptor,
     ToolResult,
     VendorUnreachable,
@@ -61,7 +68,7 @@ class HttpMcpClient:
     auth: httpx.Auth | None = None
 
     async def establish(self) -> str | None:
-        """Eagerly prime the leg-2 session (the boot-time handshake, DL-2/REQ-9.8).
+        """Eagerly prime the leg-2 session (the boot-time handshake).
 
         Satisfies `SupportsSessionEstablish`, returning the established audience
         (RFC 8707) when a token is minted, else `None`. When `auth` is a `BridgeAuth`,
@@ -109,10 +116,25 @@ class HttpMcpClient:
             for tool in result.tools
         ]
 
-    async def call_tool(self, name: str, arguments: Mapping[str, Any]) -> ToolResult:
+    async def call_tool(
+        self,
+        name: str,
+        arguments: Mapping[str, Any],
+        *,
+        correlation_id: str | None = None,
+    ) -> ToolResult:
+        """Forward one invocation, carrying the call's trace id downstream.
+
+        `correlation_id` becomes the `TRACE_HEADER_NAME` header. It is also what the
+        Bridge reads back off the outbound request to anchor an exchange to this call, so
+        it is set as a client default rather than on one message: the SDK's `initialize`
+        is the request that triggers the token handshake.
+        """
         try:
             async with (
-                create_mcp_http_client(auth=self.auth) as http_client,
+                create_mcp_http_client(
+                    auth=self.auth, headers=_trace_headers(correlation_id)
+                ) as http_client,
                 streamable_http_client(self.url, http_client=http_client) as (
                     read,
                     write,
@@ -130,6 +152,17 @@ class HttpMcpClient:
             content=[_block_to_dict(block) for block in result.content],
             is_error=bool(result.isError),
         )
+
+
+def _trace_headers(correlation_id: str | None) -> dict[str, str] | None:
+    """The downstream trace header for `correlation_id`, or `None` when there is none.
+
+    `None` rather than an empty dict: an untraced call sends no trace header at all,
+    rather than a present empty one a target might log as an actual trace id.
+    """
+    if correlation_id is None:
+        return None
+    return {TRACE_HEADER_NAME: correlation_id}
 
 
 def _block_to_dict(block: object) -> dict[str, Any]:

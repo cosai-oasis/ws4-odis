@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://apf.local/schemas/odis.audit.event.v1.json",
+  "$id": "urn:odis:contract-harness:schemas:odis.audit.event.v1",
   "title": "odis.audit.event.v1",
-  "description": "Common audit event. Mirrors APF §6.5; `event_type` accepts either the APF enum verbatim OR the `odis.<ns>.<name>` extension namespace. Runtime taxonomy enforcement (see audit_taxonomy.is_valid_event_type) is layered on top of the JSON Schema pattern.",
+  "description": "Common audit event. Mirrors APF \u00a76.5; `event_type` accepts either the APF enum verbatim OR the `odis.<ns>.<name>` extension namespace. Runtime taxonomy enforcement (see audit_taxonomy.is_valid_event_type) is layered on top of the JSON Schema pattern.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -19,14 +19,41 @@
     "apf_semantic_enforcement"
   ],
   "properties": {
-    "schema_version": {"type": "string", "const": "odis.v1"},
-    "correlation_id": {"type": "string", "format": "uuid"},
-    "bundle_id": {"type": "string", "const": "odis-fixture-bundle"},
-    "bundle_version": {"type": "string", "const": "0.0.0-odis-harness"},
-    "trust_root_id": {"type": "string", "const": "odis-fixture-trust-root"},
-    "policy_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "event_id": {"type": "string", "format": "uuid"},
-    "timestamp": {"type": "string", "format": "date-time"},
+    "schema_version": {
+      "type": "string",
+      "const": "odis.v1"
+    },
+    "correlation_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "bundle_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifier of the Authority Grant this envelope was produced under. Carried from the loaded grant, not pinned: an envelope must name the grant actually in force."
+    },
+    "bundle_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Version of the Authority Grant in force. Carried from the loaded grant, not pinned: an envelope must name the grant actually in force."
+    },
+    "trust_root_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Trust anchor the grant's signature chains to. Carried from the loaded grant, not pinned: an envelope must name the grant actually in force."
+    },
+    "policy_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "event_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
     "event_type": {
       "type": "string",
       "oneOf": [
@@ -53,20 +80,36 @@
           "pattern": "^odis\\.[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"
         }
       ],
-      "description": "APF §6.5 enum OR `odis.<ns>.<name>` extension. Runtime taxonomy check in audit_taxonomy.is_valid_event_type is the authoritative gate."
+      "description": "APF \u00a76.5 enum OR `odis.<ns>.<name>` extension. Runtime taxonomy check in audit_taxonomy.is_valid_event_type is the authoritative gate."
     },
-    "phase": {"type": "string", "const": "odis-harness"},
+    "phase": {
+      "type": "string",
+      "const": "odis-harness"
+    },
     "apf_semantic_enforcement": {
       "type": "boolean",
-      "description": "Sink-derived: true for resource-scoped events (the Tier 3 wedge — every forwarded/refused resource call is APF-semantically enforced). Emitters MUST NOT set this; the sink raises ConformancePostureViolation if they do."
+      "description": "Sink-derived: true for resource-scoped events (the Tier 3 wedge \u2014 every forwarded/refused resource call is APF-semantically enforced). Emitters MUST NOT set this; the sink raises ConformancePostureViolation if they do."
     },
-    "user_id": {"type": "string", "description": "Optional sponsor identifier (APF §6.5 MUST in source; OPT in ODIS Contract Harness scaffold)."},
-    "reason_code": {"type": "string", "minLength": 1},
-    "result_class": {"type": "string", "minLength": 1},
-    "resource_family": {"type": "string", "minLength": 1},
+    "user_id": {
+      "type": "string",
+      "description": "Identifier of the originating principal (ODIS-CC-02). Optional in this harness; the Router does not yet authenticate an inbound principal.",
+      "minLength": 1
+    },
+    "reason_code": {
+      "type": "string",
+      "minLength": 1
+    },
+    "result_class": {
+      "type": "string",
+      "minLength": 1
+    },
+    "resource_family": {
+      "type": "string",
+      "minLength": 1
+    },
     "extra": {
       "type": "object",
-      "description": "Free-form event-specific payload. Carries tool name, family, endpoint id, decision id, reason code — never provider args or secrets."
+      "description": "Free-form event-specific payload. Carries tool name, family, endpoint id, decision id, reason code \u2014 never provider args or secrets."
     }
   }
 }

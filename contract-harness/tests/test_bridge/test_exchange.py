@@ -4,41 +4,43 @@ Hermetic: a stub `TokenExchanger` drives `BridgeAuth.async_auth_flow` over fake
 `httpx.Request`s — no network, no MCP transport. Covers attach-bearer, no-remint
 while fresh, remint when expired/within leeway, single-exchange under concurrency,
 the sync-flow guard, and the secret never landing in a repr.
+
+The subject here is the token lifecycle, so `_auth` supplies a discarding audit anchor:
+`BridgeAuth` requires one to construct (ODIS-CC-06), which makes it a precondition of every
+test below rather than optional scaffolding. `test_audit.py` owns the record itself.
 """
 
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
 
 from odis_harness.bridge.exchange import BridgeAuth, ExchangedToken
+from tests import factories
 
 # Async tests need the event loop's self-pipe socket (suite is --disable-socket).
 pytestmark = pytest.mark.enable_socket
 
 
-@dataclass
-class _StubExchanger:
-    """Records every `exchange` call and returns tokens from a FIFO of expiries.
+def _auth(exchanger, *, audience="aud", subject_token_provider=None, leeway=None) -> BridgeAuth:
+    """A `BridgeAuth` over `exchanger`, anchored to a discarding sink.
 
-    The bearer encodes the call index so a re-mint is observable. `subjects` records
-    each subject_token seen (proving a FRESH one is fetched per re-mint).
+    Every test here exchanges, and `BridgeAuth` cannot be constructed without an anchor,
+    so the anchor is a precondition rather than a fixture detail — see the module
+    docstring.
     """
-
-    expiries: list[datetime]
-    calls: int = 0
-    subjects: list[str] = field(default_factory=list)
-
-    async def exchange(self, *, subject_token: str, audience: str) -> ExchangedToken:
-        self.subjects.append(subject_token)
-        idx = self.calls
-        self.calls += 1
-        expires_at = self.expiries[min(idx, len(self.expiries) - 1)]
-        return ExchangedToken(bearer=f"bearer-{idx}-{audience}", expires_at=expires_at)
+    optional = {} if leeway is None else {"leeway": leeway}
+    return BridgeAuth(
+        subject_token_provider=subject_token_provider or (lambda: "agent-jwt"),
+        audience=audience,
+        exchanger=exchanger,
+        anchor=factories.exchange_anchor(),
+        **optional,
+    )
 
 
 def _request() -> httpx.Request:
@@ -63,12 +65,8 @@ async def _run_flow(auth: BridgeAuth) -> httpx.Request:
 
 
 async def test_async_auth_flow_attaches_bearer() -> None:
-    exchanger = _StubExchanger(expiries=[datetime.now(UTC) + timedelta(minutes=5)])
-    auth = BridgeAuth(
-        subject_token_provider=lambda: "agent-jwt",
-        audience="https://vendor.example/mcp",
-        exchanger=exchanger,
-    )
+    exchanger = factories.StubTokenExchanger(expiries=[datetime.now(UTC) + timedelta(minutes=5)])
+    auth = _auth(exchanger, audience="https://vendor.example/mcp")
     sent = await _run_flow(auth)
     assert sent.headers["Authorization"] == "Bearer bearer-0-https://vendor.example/mcp"
     assert exchanger.calls == 1
@@ -76,10 +74,8 @@ async def test_async_auth_flow_attaches_bearer() -> None:
 
 async def test_200_first_response_does_not_retry() -> None:
     """A 200 first response ends the flow after one yield — no re-mint, no second yield."""
-    exchanger = _StubExchanger(expiries=[datetime.now(UTC) + timedelta(minutes=5)])
-    auth = BridgeAuth(
-        subject_token_provider=lambda: "agent-jwt", audience="aud", exchanger=exchanger
-    )
+    exchanger = factories.StubTokenExchanger(expiries=[datetime.now(UTC) + timedelta(minutes=5)])
+    auth = _auth(exchanger)
     gen = auth.async_auth_flow(_request())
     await gen.__anext__()
     with pytest.raises(StopAsyncIteration):
@@ -92,15 +88,13 @@ async def test_remints_and_retries_once_on_rejection(reject_status: int) -> None
     """A 401/403 first response re-mints a FRESH token and re-yields with the NEW bearer
     (a token the vendor rejected mid-TTL must not be re-presented)."""
     # Both expiries fresh: the re-mint is driven by the rejection, not staleness.
-    exchanger = _StubExchanger(
+    exchanger = factories.StubTokenExchanger(
         expiries=[
             datetime.now(UTC) + timedelta(minutes=5),
             datetime.now(UTC) + timedelta(minutes=5),
         ]
     )
-    auth = BridgeAuth(
-        subject_token_provider=lambda: "agent-jwt", audience="aud", exchanger=exchanger
-    )
+    auth = _auth(exchanger)
     request = _request()
     gen = auth.async_auth_flow(request)
     first = await gen.__anext__()
@@ -117,12 +111,8 @@ async def test_remints_and_retries_once_on_rejection(reject_status: int) -> None
 
 
 async def test_does_not_remint_while_token_is_fresh() -> None:
-    exchanger = _StubExchanger(expiries=[datetime.now(UTC) + timedelta(minutes=5)])
-    auth = BridgeAuth(
-        subject_token_provider=lambda: "agent-jwt",
-        audience="aud",
-        exchanger=exchanger,
-    )
+    exchanger = factories.StubTokenExchanger(expiries=[datetime.now(UTC) + timedelta(minutes=5)])
+    auth = _auth(exchanger)
     first = await _run_flow(auth)
     second = await _run_flow(auth)
     assert first.headers["Authorization"] == second.headers["Authorization"]
@@ -131,17 +121,13 @@ async def test_does_not_remint_while_token_is_fresh() -> None:
 
 async def test_reminted_once_expired() -> None:
     # First token already expired; second is fresh.
-    exchanger = _StubExchanger(
+    exchanger = factories.StubTokenExchanger(
         expiries=[
             datetime.now(UTC) - timedelta(seconds=1),
             datetime.now(UTC) + timedelta(minutes=5),
         ]
     )
-    auth = BridgeAuth(
-        subject_token_provider=lambda: "agent-jwt",
-        audience="aud",
-        exchanger=exchanger,
-    )
+    auth = _auth(exchanger)
     first = await _run_flow(auth)
     second = await _run_flow(auth)
     assert first.headers["Authorization"] == "Bearer bearer-0-aud"
@@ -151,18 +137,13 @@ async def test_reminted_once_expired() -> None:
 
 async def test_reminted_when_within_leeway() -> None:
     # Token expires in 10s but leeway is 30s → treated as stale, re-minted.
-    exchanger = _StubExchanger(
+    exchanger = factories.StubTokenExchanger(
         expiries=[
             datetime.now(UTC) + timedelta(seconds=10),
             datetime.now(UTC) + timedelta(minutes=5),
         ]
     )
-    auth = BridgeAuth(
-        subject_token_provider=lambda: "agent-jwt",
-        audience="aud",
-        exchanger=exchanger,
-        leeway=timedelta(seconds=30),
-    )
+    auth = _auth(exchanger, leeway=timedelta(seconds=30))
     await _run_flow(auth)
     second = await _run_flow(auth)
     assert second.headers["Authorization"] == "Bearer bearer-1-aud"
@@ -185,11 +166,7 @@ async def test_concurrent_requests_trigger_single_exchange() -> None:
             )
 
     exchanger = _SlowExchanger()
-    auth = BridgeAuth(
-        subject_token_provider=lambda: "agent-jwt",
-        audience="aud",
-        exchanger=exchanger,
-    )
+    auth = _auth(exchanger)
     sents = await asyncio.gather(*(_run_flow(auth) for _ in range(20)))
     assert exchanger.calls == 1, "concurrent requests must share a single exchange"
     assert all(s.headers["Authorization"] == "Bearer shared" for s in sents)
@@ -204,24 +181,20 @@ async def test_provider_called_fresh_on_each_remint() -> None:
         minted.append(token)
         return token
 
-    exchanger = _StubExchanger(
+    exchanger = factories.StubTokenExchanger(
         expiries=[
             datetime.now(UTC) - timedelta(seconds=1),  # forces a second mint
             datetime.now(UTC) + timedelta(minutes=5),
         ]
     )
-    auth = BridgeAuth(subject_token_provider=_provider, audience="aud", exchanger=exchanger)
+    auth = _auth(exchanger, subject_token_provider=_provider)
     await _run_flow(auth)
     await _run_flow(auth)
     assert exchanger.subjects == ["agent-jwt-0", "agent-jwt-1"]
 
 
 def test_sync_auth_flow_raises_clear_error() -> None:
-    auth = BridgeAuth(
-        subject_token_provider=lambda: "agent-jwt",
-        audience="aud",
-        exchanger=_StubExchanger(expiries=[datetime.now(UTC) + timedelta(minutes=5)]),
-    )
+    auth = _auth(factories.StubTokenExchanger(expiries=[datetime.now(UTC) + timedelta(minutes=5)]))
     with pytest.raises(RuntimeError, match="requires an async client"):
         next(auth.sync_auth_flow(_request()))
     with pytest.raises(RuntimeError, match="requires an async client"):
@@ -236,37 +209,25 @@ def test_exchanged_token_repr_hides_bearer() -> None:
 
 
 async def test_bridge_auth_repr_hides_bearer() -> None:
-    exchanger = _StubExchanger(expiries=[datetime.now(UTC) + timedelta(minutes=5)])
-    auth = BridgeAuth(
-        subject_token_provider=lambda: "agent-jwt",
-        audience="aud",
-        exchanger=exchanger,
-    )
+    exchanger = factories.StubTokenExchanger(expiries=[datetime.now(UTC) + timedelta(minutes=5)])
+    auth = _auth(exchanger)
     await _run_flow(auth)  # populate the cache
     # The bearer ("bearer-0-aud") is inside an ExchangedToken whose repr suppresses it.
     assert "bearer-0-aud" not in repr(auth)
 
 
 async def test_establish_primes_token_with_a_single_exchange() -> None:
-    """The eager handshake (DL-2): establish() exchanges exactly once."""
-    exchanger = _StubExchanger(expiries=[datetime.now(UTC) + timedelta(minutes=5)])
-    auth = BridgeAuth(
-        subject_token_provider=lambda: "agent-jwt",
-        audience="aud",
-        exchanger=exchanger,
-    )
+    """The eager handshake: establish() exchanges exactly once."""
+    exchanger = factories.StubTokenExchanger(expiries=[datetime.now(UTC) + timedelta(minutes=5)])
+    auth = _auth(exchanger)
     await auth.establish()
     assert exchanger.calls == 1
 
 
 async def test_second_establish_while_fresh_does_not_re_exchange() -> None:
     """establish() is idempotent: a second call while the token is fresh is a no-op."""
-    exchanger = _StubExchanger(expiries=[datetime.now(UTC) + timedelta(minutes=5)])
-    auth = BridgeAuth(
-        subject_token_provider=lambda: "agent-jwt",
-        audience="aud",
-        exchanger=exchanger,
-    )
+    exchanger = factories.StubTokenExchanger(expiries=[datetime.now(UTC) + timedelta(minutes=5)])
+    auth = _auth(exchanger)
     await auth.establish()
     await auth.establish()
     assert exchanger.calls == 1, "a fresh primed token must be reused, not re-exchanged"
@@ -274,12 +235,8 @@ async def test_second_establish_while_fresh_does_not_re_exchange() -> None:
 
 async def test_request_after_establish_reuses_primed_token() -> None:
     """A request after establish() reuses the primed token — no new exchange."""
-    exchanger = _StubExchanger(expiries=[datetime.now(UTC) + timedelta(minutes=5)])
-    auth = BridgeAuth(
-        subject_token_provider=lambda: "agent-jwt",
-        audience="aud",
-        exchanger=exchanger,
-    )
+    exchanger = factories.StubTokenExchanger(expiries=[datetime.now(UTC) + timedelta(minutes=5)])
+    auth = _auth(exchanger)
     await auth.establish()
     sent = await _run_flow(auth)
     assert sent.headers["Authorization"] == "Bearer bearer-0-aud"

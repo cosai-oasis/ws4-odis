@@ -1,9 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://apf.local/schemas/odis.bundle.v1.json",
+  "$id": "urn:odis:contract-harness:schemas:odis.bundle.v1",
   "title": "ODIS signed bundle (policy + routing co-signed)",
   "type": "object",
-  "required": ["bundle_id", "bundle_version", "trust_root_id", "families"],
+  "required": [
+    "bundle_id",
+    "bundle_version",
+    "trust_root_id",
+    "families"
+  ],
   "additionalProperties": false,
   "properties": {
     "bundle_id": {
@@ -17,6 +22,43 @@
     "trust_root_id": {
       "type": "string",
       "minLength": 1
+    },
+    "actor": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable identifier of the agent identity this grant was issued to (ODIS Delegation Record 'actor'). Absent on a grant assembled outside issuance."
+    },
+    "originating_principal": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Authenticated principal whose authority initiated this delegation. Single-valued: a grant composed from two delegators has no field for the second, so issuance refuses that composition."
+    },
+    "contributing_records": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Every issuer-side record that conferred this grant, by name, version and content digest. A provenance manifest under a local name: this is deliberately NOT the ODIS Delegation Record's originating_authorization_ref, which references the authoritative grant that authorized the delegating principal to delegate. That reference is unset here \u2014 see docs/odis-conformance.md.",
+      "items": {
+        "$ref": "#/$defs/MappingRecordRef"
+      }
+    },
+    "delegation_chain": {
+      "type": "array",
+      "maxItems": 0,
+      "description": "Ordered list of prior delegation hops, empty for a root record. This issuer mints root records only \u2014 one operator-to-agent hop, no sub-delegation \u2014 so the array is constrained empty: the field asserts single-hop rather than reserving a shape nothing supplies. A bundle claiming a hop is refused at load.",
+      "items": true
+    },
+    "attenuation_profile_ref": {
+      "$ref": "#/$defs/AttenuationProfileRef"
+    },
+    "issued_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 instant the issuer created this grant."
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 instant after which this grant confers nothing. The Router refuses every call once it has passed. Absent means the grant never expires, which is the shape of an unissued local grant."
     },
     "families": {
       "type": "object",
@@ -32,7 +74,12 @@
   "$defs": {
     "Family": {
       "type": "object",
-      "required": ["vendor_mcp", "policy", "tools", "default_mode"],
+      "required": [
+        "vendor_mcp",
+        "policy",
+        "tools",
+        "default_mode"
+      ],
       "additionalProperties": false,
       "properties": {
         "vendor_mcp": {
@@ -51,7 +98,10 @@
         },
         "default_mode": {
           "type": "string",
-          "enum": ["strict", "permissive"],
+          "enum": [
+            "strict",
+            "permissive"
+          ],
           "default": "strict",
           "description": "Behavior when the agent calls a tool the vendor catalog exposes but the bundle does not policy: strict refuses + hides; permissive forwards + audits."
         }
@@ -69,7 +119,10 @@
     },
     "VendorMcp": {
       "type": "object",
-      "required": ["endpoint_id", "url"],
+      "required": [
+        "endpoint_id",
+        "url"
+      ],
       "additionalProperties": false,
       "properties": {
         "endpoint_id": {
@@ -81,6 +134,62 @@
           "type": "string",
           "pattern": "^https?://",
           "description": "Vendor MCP server URL. HTTP-only (per http-only-transport memory); must begin with http:// or https://."
+        },
+        "egress_mode": {
+          "type": "string",
+          "enum": [
+            "native",
+            "bridge"
+          ],
+          "default": "bridge",
+          "description": "The egress mode the Provider Adapter declares for this target (ODIS-L2-15). native is legal only when the target itself validates the agent's runtime credential and delegation record; otherwise the adapter enforces, which is bridge. A document that omits it inherits bridge, the mode this harness operates in; an issued bundle always states it."
+        }
+      }
+    },
+    "MappingRecordRef": {
+      "type": "object",
+      "required": [
+        "name",
+        "version",
+        "digest"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Name of the issuer-side authorization record."
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Record version that conferred the grant. Detects a rolled-back record."
+        },
+        "digest": {
+          "type": "string",
+          "description": "Content digest as sha256:<64 lowercase hex>. A verifier that can read the referenced object recomputes it. The algorithm prefix is part of the value so a change of algorithm stays legible rather than producing differently-shaped hex.",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "AttenuationProfileRef": {
+      "type": "object",
+      "required": [
+        "uri",
+        "digest"
+      ],
+      "additionalProperties": false,
+      "description": "The immutable, versioned normalization and comparison rules this grant was narrowed under (ODIS-L2-06).",
+      "properties": {
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Versioned URI of the attenuation profile. Immutable: changed rules mint a new version."
+        },
+        "digest": {
+          "type": "string",
+          "description": "Content digest as sha256:<64 lowercase hex>. A verifier that can read the referenced object recomputes it. The algorithm prefix is part of the value so a change of algorithm stays legible rather than producing differently-shaped hex.",
+          "pattern": "^sha256:[0-9a-f]{64}$"
         }
       }
     }

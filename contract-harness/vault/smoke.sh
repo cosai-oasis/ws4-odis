@@ -5,34 +5,10 @@
 # Requires: a vault binary (ODIS_VAULT_BIN, PATH, or a sibling ../vault) and a built plugin.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"   # .../vault
-HARNESS="$(dirname "$HERE")"            # harness root (holds src/, vault-plugin/, vault/)
-export HARNESS
-PLUGIN_DIR="$HARNESS/vault-plugin/dist"
-# vault binary: ODIS_VAULT_BIN, else on PATH, else a sibling beside the harness dir (dev).
-export VAULT="${ODIS_VAULT_BIN:-$(command -v vault || echo "$HARNESS/../vault")}"
-export VAULT_ADDR="http://127.0.0.1:8200" VAULT_TOKEN="root"
-export FIXDIR=/tmp/odis-fix
-
-[ -x "$VAULT" ] || { echo "FAIL: vault binary not found at $VAULT (set ODIS_VAULT_BIN)"; exit 2; }
-[ -x "$PLUGIN_DIR/apf-bundle-issuer" ] || { echo "FAIL: plugin not built (run: mise run build-vault-plugin)"; exit 2; }
-
-# Refuse to run against a pre-existing Vault: the readiness poll below cannot
-# tell our dev server from one already serving 8200, and provisioning must never
-# write into an unrelated Vault.
-if "$VAULT" status >/dev/null 2>&1; then
-  echo "FAIL: something is already serving $VAULT_ADDR; stop it or change the address"; exit 2
-fi
-"$VAULT" server -dev -dev-root-token-id=root -dev-plugin-dir="$PLUGIN_DIR" \
-  -dev-listen-address=127.0.0.1:8200 > /tmp/odis_smoke_vault.log 2>&1 &
-VPID=$!
-trap 'kill "$VPID" 2>/dev/null || true' EXIT
-for _ in $(seq 1 30); do
-  kill -0 "$VPID" 2>/dev/null || { echo "FAIL: vault exited early (see /tmp/odis_smoke_vault.log)"; exit 1; }
-  "$VAULT" status >/dev/null 2>&1 && break
-  sleep 0.5
-done
-
-bash "$HERE/provision.sh"
+# Boot + provision live in one place so this and `demo-signed.sh` cannot drift.
+# shellcheck source=lib/dev-vault.sh
+source "$HERE/lib/dev-vault.sh"
+boot_dev_vault
 
 # Router caller leg: exchange the workload JWT for a token scoped to apf/issue, then issue.
 TOKEN="$("$VAULT" write -field=token auth/jwt/login role=router jwt=@"$FIXDIR/jwt")"

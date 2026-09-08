@@ -1,12 +1,18 @@
-"""PolicyEvaluator tests: per-family Rego via real OPA."""
+"""PolicyEvaluator tests: per-family Rego via OPA."""
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
-from odis_harness.bundle import Family, ToolPolicy, VendorMcp
-from odis_harness.contracts import AuthzRequest
 from odis_harness.mcp_forwarder.policy import PolicyEvaluator
+from odis_harness.mcp_forwarder.reason_codes import ReasonCode
+from tests import factories
+
+if TYPE_CHECKING:
+    from odis_harness.bundle import Family
+    from odis_harness.contracts import AuthzRequest
 
 pytestmark = pytest.mark.requires_opa
 
@@ -38,26 +44,13 @@ this is not valid rego !!! {{{
 
 
 def _family(policy: str) -> Family:
-    return Family(
-        vendor_mcp=VendorMcp(endpoint_id="jira-prod-mcp-v1", url="https://x.invalid/"),
-        policy=policy,
-        tools={
-            "update_issue": ToolPolicy(action_limits={"allowed_fields": ["labels"]}),
-        },
-        default_mode="strict",
-    )
+    return factories.family(policy=policy)
 
 
 def _request(*, verb: str = "update_issue", issue_key: str = "APF-123") -> AuthzRequest:
-    return AuthzRequest(
-        correlation_id="11111111-2222-4333-8444-555555555555",
-        subject={"sponsor": {"id": "s"}, "agent": {"id": "a"}},
-        target_resource={"resource_family": "jira-prod"},
+    return factories.authz_request(
         verb=verb,
         request_body={"issue_key": issue_key, "fields": {"labels": ["odis-demo"]}},
-        task_intent="add label",
-        issued_at="2026-05-28T00:00:00Z",
-        policy_digest="a" * 64,
     )
 
 
@@ -112,3 +105,46 @@ def test_evaluate_missing_opa_binary_fails_closed_to_deny() -> None:
     decision = evaluator.evaluate(_family(_ALLOW_LABELS_ON_APF), _request())
     assert decision.decision == "deny"
     assert decision.reason_code == "policy_error"
+
+
+def test_missing_opa_binary_reports_policy_error_not_deny() -> None:
+    """A fail-closed decision must be distinguishable from a policy refusal.
+
+    Both deny the call, but "the PDP was unreachable" and "the policy said no" are the
+    two cases an operator most needs to tell apart in the audit trail.
+    """
+    evaluator = PolicyEvaluator(opa_binary="/nonexistent/opa")
+    decision = evaluator.evaluate(_family("package odis_policy\n"), _request())
+    assert decision.decision == "deny"
+    assert decision.reason_code == ReasonCode.POLICY_ERROR
+
+
+@pytest.mark.requires_opa
+def test_policy_can_condition_on_the_calling_identity(opa_binary: str) -> None:
+    """The point of putting `subject` in the OPA input: a policy can gate on WHO calls.
+
+    Without this, nothing in the repo reads `input.subject` — no shipped policy, no test,
+    no Rego the Vault plugin generates — so the field could be renamed or dropped and the
+    whole suite would stay green.
+    """
+    principal_gated = """
+package odis_policy
+default decision := {"decision": "deny", "obligations": {}}
+decision := {"decision": "allow", "obligations": {}} if {
+    input.subject.originating_principal.id == "alice"
+}
+"""
+    evaluator = PolicyEvaluator(opa_binary=opa_binary)
+    family = factories.family(policy=principal_gated)
+
+    allowed = factories.authz_request()
+    object.__setattr__(
+        allowed, "subject", {"originating_principal": {"id": "alice"}, "agent": {"id": "a"}}
+    )
+    assert evaluator.evaluate(family, allowed).decision == "allow"
+
+    refused = factories.authz_request()
+    object.__setattr__(
+        refused, "subject", {"originating_principal": {"id": "mallory"}, "agent": {"id": "a"}}
+    )
+    assert evaluator.evaluate(family, refused).decision == "deny"

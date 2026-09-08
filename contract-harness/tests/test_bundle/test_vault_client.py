@@ -1,6 +1,6 @@
 """Tests for the Router-side VaultBundleClient.
 
-Hermetic via `httpx.MockTransport` — no real socket, so these pass under
+Hermetic via `httpx.MockTransport` — no socket, so these pass under
 `pytest-socket --disable-socket`. The live dev-vault path is a separate task.
 
 The client performs the mint-then-load handshake:
@@ -26,9 +26,9 @@ from odis_harness.bundle.vault_client import (
 )
 
 # These tests are hermetic: every HTTP call is served in-process by
-# `httpx.MockTransport`, so no real network socket is ever opened. The marker
+# `httpx.MockTransport`, so no network socket is ever opened. The marker
 # only re-enables the AF_UNIX self-pipe that pytest-asyncio's event loop needs
-# under the suite-wide `--disable-socket`; it grants no real network access.
+# under the suite-wide `--disable-socket`; it grants no network access.
 pytestmark = pytest.mark.enable_socket
 
 _VAULT_ADDR = "https://vault.example:8200"
@@ -36,7 +36,7 @@ _LOGIN_MOUNT = "jwt"
 _LOGIN_ROLE = "router"
 _ISSUE_PATH = "apf/issue"
 _WORKLOAD_JWT = "eyJ.workload.jwt"
-_CLIENT_TOKEN = "s.deadbeefclienttoken"  # noqa: S105 — fixture token, not a real secret
+_CLIENT_TOKEN = "s.deadbeefclienttoken"
 
 #: A small canonical bundle JSON the issuer would sign — the payload that
 #: `BundleLoader.load_signed` consumes downstream.

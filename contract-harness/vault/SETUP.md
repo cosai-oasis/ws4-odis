@@ -4,7 +4,7 @@ This is the prose companion to `vault/provision.sh`. It explains **how to stand 
 Vault** so the `apf-bundle-issuer` plugin can mint and transit-sign APF Signed
 Policy Bundles, and so the Router can request them — using **OSS (Community)
 Vault only**. `provision.sh` automates every step below for a dev server; this
-guide states what each step does and how to reproduce it against a real Vault.
+guide states what each step does and how to reproduce it against a production Vault.
 
 For repointing trust from the local fixture issuer to **SPIRE**, see
 `vault/README.md` — that swap is configuration-only and orthogonal to this
@@ -45,7 +45,7 @@ signature **offline** — no Vault token is needed at gate time.
   `ODIS_VAULT_BIN`, else `vault` on `PATH`, else a sibling `vault` placed beside
   the harness directory (`$HARNESS/../vault`) for dev convenience. Set
   `ODIS_VAULT_BIN` to be explicit.
-- **`opa`** — the real OPA binary the Router uses to evaluate the bundle's Rego
+- **`opa`** — the OPA binary the Router uses to evaluate the bundle's Rego
   (resolved via `ODIS_OPA_BIN` / `PATH`). Not used by Vault itself, but needed by
   the end-to-end demo.
 - **A Go toolchain** to build the plugin. `vault-plugin/dist/` is **gitignored**,
@@ -70,7 +70,7 @@ server down on exit.
 
 The dev server is launched with `-dev-plugin-dir=$PLUGIN_DIR`, which
 **auto-registers** the plugin binary found there (no manual `vault plugin
-register`). **This is a dev-only convenience** — a real Vault requires explicit
+register`). **This is a dev-only convenience** — a production Vault requires explicit
 registration (section 5).
 
 ## 4. The configuration walkthrough (mirrors `provision.sh`)
@@ -80,7 +80,7 @@ plugin must already be built (section 2).
 
 ```bash
 export VAULT_ADDR=http://127.0.0.1:8200
-export VAULT_TOKEN=root            # dev root token; a real Vault uses a real token
+export VAULT_TOKEN=root            # dev root token; a production Vault issues its own
 VAULT=${ODIS_VAULT_BIN:-vault}     # the binary to drive
 ISSUER="https://fixture.issuer.odis.local/"
 AUD="apf-bundle-issuer"
@@ -91,14 +91,14 @@ FIXDIR=/tmp/odis-fix
 **Step 0 — fixture trust material.** Mint a fresh **fixture workload JWT** plus
 the JWKS/PEM that trust it into `$FIXDIR` (run from the harness directory; this
 is exactly what `provision.sh` does first). In production these trust anchors
-come from your real issuer (e.g. SPIRE), not the fixture — see `vault/README.md`.
+come from your own issuer (e.g. SPIRE), not the fixture — see `vault/README.md`.
 
 ```bash
 mkdir -p "$FIXDIR" && chmod 700 "$FIXDIR"   # holds a bearer JWT — keep it private
 uv run python - "$FIXDIR" "$ISSUER" "$AUD" "$SUBJECT" <<'PY'
 import json, sys
 from datetime import timedelta
-from odis_harness.vault.fixtures import FixtureIdentityIssuer
+from odis_harness.fixtures.issuer import FixtureIdentityIssuer
 d, issuer, aud, sub = sys.argv[1:5]
 iss = FixtureIdentityIssuer.generate(issuer=issuer)
 jwt = iss.mint(audience=aud, subject=sub, claims={"group": "jira-writers"}, ttl=timedelta(minutes=30))
@@ -190,6 +190,13 @@ $VAULT write apf/mappings/jira \
   bundle=@"$FIXDIR/bundle.json"
 ```
 
+The lifecycle fields are omitted above because they default: `lifecycle_state=active` and
+`grant_ttl=3600`, with no `valid_until`, so the mapping confers authority immediately and
+without a horizon. `vendor_mcp.egress_mode` defaults to `bridge` and is the only value this
+issuer signs — `native` asserts the target itself validates the agent's credential, which
+this harness does not do, so writing it is refused rather than signed. Set the fields
+explicitly for anything beyond a fixture; see the operations notes below.
+
 At this point a caller can run Leg B end-to-end:
 
 ```bash
@@ -197,7 +204,7 @@ TOKEN=$($VAULT write -field=token auth/jwt/login role=router jwt=@"$FIXDIR/jwt")
 VAULT_TOKEN="$TOKEN" $VAULT write -format=json apf/issue jwt=@"$FIXDIR/jwt"
 ```
 
-## 5. Real (non-dev) Vault
+## 5. Production (non-dev) Vault
 
 A production Vault is not started with `-dev`. The plugin **auto-registration**
 from `-dev-plugin-dir` does **not** apply — you register the plugin explicitly.
@@ -217,7 +224,7 @@ storage "file" {
 
 listener "tcp" {
   address       = "0.0.0.0:8200"
-  # TLS in production: point these at your real certificate material.
+  # TLS in production: point these at your certificate material.
   tls_cert_file = "/etc/vault/tls/vault.crt"
   tls_key_file  = "/etc/vault/tls/vault.key"
 }
@@ -238,9 +245,9 @@ vault secrets enable -path=apf apf-bundle-issuer
 ```
 
 Then run section 4 steps 1–3 and 5–7 (step 4 is the `secrets enable` above)
-against the real `VAULT_ADDR` / token, substituting your real issuer's JWKS, PEM,
+against the production `VAULT_ADDR` / token, substituting your own issuer's JWKS, PEM,
 issuer URL, audience, subject, and bundle for the fixture material. Stage that
-real trust material in a **freshly created private directory you own** (e.g.
+trust material in a **freshly created private directory you own** (e.g.
 `FIXDIR=$(mktemp -d)`), never a fixed world-known path like `/tmp/odis-fix`: on a
 shared host, a pre-created directory or world-readable files would let another
 local user read the workload JWT or swap the trust anchors between write and use.
@@ -248,7 +255,7 @@ local user read the workload JWT or swap the trust anchors between write and use
 ## 6. Production hardening
 
 The demo trades several controls for simplicity. Before relying on this for
-anything real:
+anything in production:
 
 - **Short-TTL, rotating `secret_id`.** The demo's AppRole `secret_id` is
   **non-expiring** (`secret_id_ttl=0 secret_id_num_uses=0`) because the plugin
@@ -259,10 +266,17 @@ anything real:
   transit/keys/apf-bundle/rotate`; verifiers accept all non-revoked key versions
   (the offline verifier is keyed by version). Set `min_decryption_version` to
   retire old versions.
-- **Revoke mappings.** Delete a mapping
-  (`vault delete apf/mappings/<name>`) to stop the plugin minting bundles for
-  that identity; tighten `bound_*` matchers to the narrowest identity that should
-  receive each bundle.
+- **Suspend or revoke mappings, rather than deleting them.** `lifecycle_state=suspended`
+  stops the record conferring authority and can be lifted; `lifecycle_state=revoked` also
+  stops it and is **terminal** — the plugin refuses to rewrite a revoked record to any other
+  state, so recovering means a new mapping under a new name and the revoked one stays on the
+  trail. Deleting (`vault delete apf/mappings/<name>`) also stops issuance but takes the
+  record with it, leaving nothing to audit. Either way, tighten `bound_*` matchers to the
+  narrowest identity that should receive each bundle.
+- **Bound the grant window.** `grant_ttl` sets how long an issued grant lives (default 1h,
+  capped at 24h) and `valid_until` sets when the mapping itself stops conferring. The Router
+  refuses every call once a grant's `expires_at` has passed, so the TTL is the blast radius
+  of a grant that leaks — nothing refreshes it, so it lapses rather than being re-checked.
 - **Replace the placeholder Target MCP URL.** The fixture bundle points each family's
   `vendor_mcp.url` at a placeholder (e.g. `https://jira-prod-mcp.internal:8443/`).
-  Set it to the real Target MCP endpoint, over TLS, before use.
+  Set it to the Target MCP endpoint, over TLS, before use.

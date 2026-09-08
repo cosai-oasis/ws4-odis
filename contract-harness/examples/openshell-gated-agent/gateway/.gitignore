@@ -2,3 +2,4 @@
 jwt-signing.pem
 jwt-public.pem
 jwt-kid
+docker-compose.override.yml

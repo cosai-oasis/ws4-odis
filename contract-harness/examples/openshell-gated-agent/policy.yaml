@@ -1,15 +1,18 @@
 # OpenShell sandbox network policy for the ODIS-gated agent.
 #
-# OpenShell is default-deny outbound: any host not named below is blocked by the
-# sandbox proxy (the agent gets a 403 on CONNECT). This policy authorizes the
+# OpenShell is default-deny outbound, at two layers. A proxy-mediated request to a host
+# not named below gets a 403 on CONNECT; a socket that bypasses the proxy entirely is
+# refused at connect time by the sandbox netns's nftables chain. This policy authorizes the
 # agent's ONE sanctioned egress — the ODIS Router — and nothing else. The agent
 # therefore CANNOT reach the vendor MCP server, provider APIs, or the internet
 # directly; its only path to a tool is through the Router, which makes the
 # Router's policy gate *enforcing* rather than advisory.
 #
-# Current OpenShell can enforce MCP methods and tool names at L7, but not tool arguments.
-# This demo intentionally uses a host-scoped allow so the Router demonstrates the signed
-# grant, OPA decision, and argument-level action limits after OpenShell forces the path.
+# The two layers enforce different things, which is the point of the demo. OpenShell
+# understands MCP natively (`protocol: mcp` parses the JSON-RPC envelope and can gate on
+# method and tool name) but not tool ARGUMENTS. So this policy allows the whole MCP method
+# surface and leaves the fine-grained decision to the Router: signed grant, OPA decision,
+# and argument-level action limits, after OpenShell has forced the path.
 #
 # host.openshell.internal is injected into the sandbox by the OpenShell Docker driver and
 # resolves to the host (the docker-bridge gateway IP). The Router must `serve` bound to
@@ -36,9 +39,20 @@ network_policies:
       # including the vendor MCP server and any provider/credential endpoint.
       - host: host.openshell.internal
         port: 8088
-        protocol: rest
+        # No `path` scope. The Router mounts at /mcp, but Starlette's Mount normalizes the
+        # request to `/mcp/` with a trailing slash, and a `path: /mcp` glob does not match
+        # it, so a path-scoped rule refuses every call at the proxy before it reaches
+        # the Router. Host and
+        # port are the scope that matters here anyway.
+        protocol: mcp
         enforcement: enforce
-        access: read-write
+        # `access` presets are rejected on `protocol: mcp` — HTTP method/path presets
+        # cannot authorize JSON-RPC safely, since every MCP call is a POST. The method
+        # profile is the sanctioned way to say "the whole MCP surface".
+        mcp:
+          allow_all_known_mcp_methods: true
+        rules:
+          - allow: {}
     binaries:
       # The agent process — the python in the base sandbox image's venv (see sandbox/Dockerfile).
       - { path: /sandbox/.venv/bin/python3 }

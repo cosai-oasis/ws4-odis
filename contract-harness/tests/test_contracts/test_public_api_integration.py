@@ -11,7 +11,6 @@ decision is the internal `PolicyDecision`, not a wire envelope).
 from __future__ import annotations
 
 import uuid
-from pathlib import Path
 
 import pytest
 
@@ -25,13 +24,7 @@ from odis_harness.contracts import (
     is_valid_event_type,
 )
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 _DIGEST = "a" * 64
-
-
-@pytest.fixture(scope="module")
-def envelope_validator() -> EnvelopeValidator:
-    return EnvelopeValidator(_REPO_ROOT / "schemas")
 
 
 # -- Public API surface ------------------------------------------------------
@@ -39,7 +32,7 @@ def envelope_validator() -> EnvelopeValidator:
 
 def test_public_api_covers_expected_surface() -> None:
     """The umbrella surface every other capability imports — exact set, and
-    every listed name resolves to a real symbol."""
+    every listed name resolves to a symbol."""
     expected = {
         "APF_EVENT_TYPES",
         "ODIS_EXTENSION_TYPES",
@@ -55,6 +48,8 @@ def test_public_api_covers_expected_surface() -> None:
         "EnvelopeValidator",
         "UnknownEnvelopeError",
         "is_valid_event_type",
+        "now_iso",
+        "to_iso",
     }
     assert set(contracts.__all__) == expected
     for name in contracts.__all__:
@@ -74,10 +69,10 @@ def test_tier3_full_chain_at_contracts_layer(
 
     ctx = RuntimeContext(
         correlation_id=correlation_id,
-        sponsor={"id": "fixture-sponsor", "type": "entra_oidc"},
+        originating_principal={"id": "fixture-principal", "type": "entra_oidc"},
         agent={"id": "fixture-agent", "type": "fixture_workload_identity"},
         task_intent="Add an 'odis-demo' label to APF-123",
-        target_resource={"resource_family": "jira", "instance_id": "APF-123"},
+        target_resource={"resource_family": "jira"},
         issued_at="2026-05-28T00:00:00Z",
         policy_digest=_DIGEST,
     )
@@ -85,7 +80,11 @@ def test_tier3_full_chain_at_contracts_layer(
 
     req = AuthzRequest(
         correlation_id=correlation_id,
-        subject={"sponsor": ctx.sponsor, "agent": ctx.agent},
+        subject={
+            "originating_principal": ctx.originating_principal,
+            "agent": ctx.agent,
+            "delegation_chain": [],
+        },
         target_resource=ctx.target_resource,
         verb="update_issue",
         request_body={"issue_key": "APF-123", "fields": {"labels": ["odis-demo"]}},

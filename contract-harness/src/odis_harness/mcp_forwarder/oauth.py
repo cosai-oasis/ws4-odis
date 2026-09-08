@@ -4,6 +4,13 @@ The harness does not accept static bearer tokens for live vendor calls. For
 OAuth-protected MCP servers, use authorization-code + PKCE with dynamic client
 registration so the user authenticates with the authorization server and the
 Router receives minted access tokens through the OAuth flow.
+
+That flow is a terminal token exchange under ODIS-CC-06: the token it mints is presented
+to a Target MCP that validates it natively and knows nothing about ODIS, so nothing
+downstream can record what was handed over. `AnchoredOAuthTokenStorage` is where this
+component discharges that duty — `TokenStorage.set_tokens` is the SDK's only observation
+point for a minted token, and it is reached after the authorization-code exchange and
+after every refresh.
 """
 
 from __future__ import annotations
@@ -14,11 +21,12 @@ import sys
 import webbrowser
 from contextlib import suppress
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import anyio
 from mcp.client.auth import OAuthClientProvider, TokenStorage
-from mcp.shared.auth import OAuthClientMetadata
+from mcp.shared.auth import OAuthClientMetadata, OAuthToken
 from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
 from starlette.responses import HTMLResponse
@@ -28,8 +36,10 @@ from uvicorn import Config, Server
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+    from mcp.shared.auth import OAuthClientInformationFull
     from starlette.requests import Request
+
+    from odis_harness.bridge.audit import ExchangeAuditAnchor
 
 
 def _reserve_port(host: str) -> tuple[socket.socket, int]:
@@ -79,6 +89,91 @@ class InMemoryOAuthTokenStorage(TokenStorage):
 
     async def set_client_info(self, client_info: OAuthClientInformationFull) -> None:
         self._client_info = client_info
+
+
+@dataclass(kw_only=True, slots=True)
+class AnchoredOAuthTokenStorage(InMemoryOAuthTokenStorage):
+    """Token storage that anchors every Target-MCP credential the SDK mints (ODIS-CC-06).
+
+    `anchor` is a REQUIRED constructor argument, so an unanchored instance cannot be built.
+    It has to be enforced there rather than at the point of recording, because the mint
+    happens inside the SDK: `set_tokens` is only reached once the token exists, so a
+    refusal there would discard a minted credential unrecorded — worse than not minting.
+    Requiring the anchor to construct the storage removes that choice.
+
+    Storage delegates to `InMemoryOAuthTokenStorage`, so the SDK's `TokenStorage` contract
+    is satisfied by the parent and anchoring is purely additive.
+    """
+
+    anchor: ExchangeAuditAnchor
+
+    async def set_tokens(self, tokens: OAuthToken) -> None:
+        """Anchor the minted credential, then store it.
+
+        Recorded before storing, mirroring `BridgeAuth`: a token the trail could not
+        account for is not left behind in the store. The SDK has already put it in its own
+        in-flight context by this point, so a raise here fails the request that triggered
+        the mint rather than preventing the mint — which is why the anchor is required at
+        construction instead of checked here.
+
+        Client registration is deliberately not anchored: it mints no Target-MCP
+        credential, so it is not a terminal exchange.
+        """
+        # Lazy: `cli.serve` imports this module at module level, so a top-level import
+        # here would put the Bridge on EVERY CLI invocation, plain `demo` included. The
+        # dependency is also the wrong way round — the anchor is a terminal-exchange
+        # concern that currently lives in `bridge/`, and this path performs no RFC 8693
+        # exchange.
+        from odis_harness.bridge.audit import (  # noqa: PLC0415
+            CredentialHandle,
+            ExchangeTrigger,
+            TerminalExchange,
+        )
+
+        held = await self.get_tokens()
+        self.anchor.record(
+            TerminalExchange(
+                # An interactive authorization-code flow requests no audience, and the
+                # SDK's client auth sends no RFC 8707 resource indicator. Null is what
+                # this mechanism asked for, and is how its records are told apart from
+                # the Bridge leg's. The endpoint id is not a substitute — it is already
+                # recorded as the target — and neither is the URL, which the trail must
+                # survive a target moving hosts.
+                audience=None,
+                credential=CredentialHandle.of(
+                    tokens.access_token, expires_at=_expires_at(tokens)
+                ),
+                # No delegation-input assertion exists on this path: authorization was an
+                # interactive human grant this process never sees. The refresh token is a
+                # separate artifact and not the one presented to the target, so it is not
+                # fingerprinted either (ODIS-CC-07 minimisation).
+                subject=None,
+                # The SDK mints on its own schedule — a refresh is not tied to any agent
+                # call — so there is no trace id to adopt and the anchor mints one.
+                correlation_id=None,
+                trigger=(
+                    ExchangeTrigger.OAUTH_INITIAL_TOKEN
+                    if held is None
+                    else ExchangeTrigger.OAUTH_REPLACEMENT_TOKEN
+                ),
+            )
+        )
+        # Two-arg `super`: `slots=True` makes the decorator return a NEW class object, so
+        # the zero-arg form's `__class__` cell points at the pre-decoration class and
+        # raises "obj must be an instance or subtype of type".
+        await super(AnchoredOAuthTokenStorage, self).set_tokens(tokens)
+
+
+def _expires_at(tokens: OAuthToken) -> datetime | None:
+    """When the target will start rejecting this token, or `None` if it does not say.
+
+    OAuth expresses lifetime as `expires_in` seconds from issuance, and the SDK calls
+    `set_tokens` immediately on receipt, so `now` is the issuance instant to within the
+    token request's own round-trip.
+    """
+    if tokens.expires_in is None:
+        return None
+    return datetime.now(UTC) + timedelta(seconds=tokens.expires_in)
 
 
 @dataclass(kw_only=True, slots=True)
@@ -223,6 +318,7 @@ def _html_response(message: str, *, status_code: int = 200) -> HTMLResponse:
 
 
 __all__ = [
+    "AnchoredOAuthTokenStorage",
     "InMemoryOAuthTokenStorage",
     "OAuth2InteractiveConfig",
     "make_interactive_oauth2_auth",

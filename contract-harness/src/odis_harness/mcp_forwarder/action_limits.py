@@ -2,12 +2,20 @@
 
 ODIS terminology: action-limit enforcement. APF Phase 1 policy decisions call
 these "obligations"; the bundle declares expected action limits per governed
-tool. Per [[odis-vocabulary-canonical]].
+tool.
 
-Per-tool dispatch — adding a new gated tool means adding an enforcer
-function and a dispatch entry. Data-driven (bundle-declared) enforcement is
-follow-up work; this initial implementation
-is per-tool Python for the canonical wedge `jira.update_issue`.
+Per-tool dispatch — adding a new gated tool means adding an enforcer function and a
+dispatch entry. Data-driven (bundle-declared) enforcement is follow-up work; what ships
+is per-tool Python for the canonical wedge `update_issue`.
+
+Note the mismatch between what these rules encode and how they are selected. The rules
+are Jira-shaped — `APF-123` issue keys, Jira's `fields` object — but `_ENFORCERS` is keyed
+on the **unprefixed** tool name, so any family that *polices* a tool called `update_issue`
+gets them, not just `jira-prod`. (A family that merely routes such a tool without policing
+it is untouched: `Router` only reaches enforcement for a governed tool with non-empty
+obligations or declared limits.) A second policed `update_issue` with different argument
+semantics would be checked against Jira's rules. Hence the Jira-named internals below:
+they describe the constraint accurately, while the dispatch key does not scope it.
 """
 
 from __future__ import annotations
@@ -64,7 +72,7 @@ def _enforce_jira_update_issue(
     args: Mapping[str, Any],
     obligations: Mapping[str, Any],
 ) -> None:
-    """Tier 3 wedge: labels-only on a specific project.
+    """Tier 3 wedge: labels-only on the project the obligations name.
 
     Obligation keys honored:
       - `allowed_fields`: list[str] — every key in `args.fields` must be in this list.
@@ -78,7 +86,7 @@ def _enforce_jira_update_issue(
         unknown = set(args.keys()) - _JIRA_UPDATE_ISSUE_KNOWN_ARGS
         if unknown:
             message = (
-                f"jira.update_issue: unexpected argument(s) {sorted(unknown)!r} "
+                f"update_issue: unexpected argument(s) {sorted(unknown)!r} "
                 f"outside the scoped 'fields' channel; obligation requires "
                 f"allowed_fields={allowed_fields!r}"
             )
@@ -87,7 +95,7 @@ def _enforce_jira_update_issue(
         fields = args.get("fields")
         if not isinstance(fields, dict):
             message = (
-                f"jira.update_issue: 'fields' missing or not an object, "
+                f"update_issue: 'fields' missing or not an object, "
                 f"obligation requires allowed_fields={allowed_fields!r}"
             )
             raise ActionLimitViolation(message)
@@ -96,7 +104,7 @@ def _enforce_jira_update_issue(
         forbidden = actual_set - allowed_set
         if forbidden:
             message = (
-                f"jira.update_issue: fields {sorted(forbidden)!r} not in "
+                f"update_issue: fields {sorted(forbidden)!r} not in "
                 f"obligation allowed_fields={sorted(allowed_set)!r}"
             )
             raise ActionLimitViolation(message)
@@ -108,7 +116,7 @@ def _enforce_jira_update_issue(
         actual_project = match.group(1) if match else None
         if actual_project != required_project:
             message = (
-                f"jira.update_issue: issue_key {issue_key!r} project "
+                f"update_issue: issue_key {issue_key!r} project "
                 f"{actual_project!r} does not match obligation "
                 f"project={required_project!r}"
             )

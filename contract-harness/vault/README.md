@@ -45,15 +45,17 @@ subject to a bundle mapping, assembles the bundle, and transit-signs it —
 exactly as it does for the fixture issuer. SPIFFE IDs are ordinary string
 subjects to the matcher (`bound_subject` / `bound_claims`).
 
-## Unresolved production question — agent SVID hand-off
+## Open production question — agent SVID hand-off
 
-**How the agent's real JWT-SVID reaches the Router is UNRESOLVED**.
-This harness does **not** choose a mechanism. The two candidates:
+**The harness ships no hand-off of its own**, and the two candidates differ in what
+they demand of the deployment:
 
 - **Sidecar-mint** — a SPIRE-agent-backed sidecar mints the JWT-SVID and the
   agent reads it from a shared workload API socket / file.
-- **OpenShell supervisor hand-off** — the sandbox supervisor obtains the SVID
-  and injects it on the agent's behalf at egress.
+- **Substrate hand-off** — the sandbox obtains the credential and injects it on the
+  agent's behalf at egress, so the agent holds only a placeholder. This one is
+  demonstrated: see `docs/run-modes.md` section 3 for what OpenShell needs to make it
+  work. It does not issue the credential — SPIRE or an equivalent still does.
 
 **Caveat:** SPIRE attestation granularity (per-pod vs. per-container) decides
 whether each agent container gets a **distinct** SVID or shares one with its

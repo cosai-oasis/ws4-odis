@@ -11,12 +11,15 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import httpx
+
+from odis_harness.mcp_forwarder.transports import free_loopback_port
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -47,6 +50,32 @@ def plugin_built() -> bool:
     return _PLUGIN_BIN.is_file()
 
 
+def plugin_current() -> bool:
+    """True when the built plugin is present **and** newer than every source it is built from.
+
+    Presence alone is not enough. `vault` resolves from the ambient PATH on most developer
+    machines, so the `requires_vault` slice runs rather than skipping, and it then runs
+    against whatever binary happens to be in `dist/`. A binary predating a field the
+    plugin now emits fails on that field, which reads as a code defect and is really a
+    build gap.
+
+    Checked here rather than by making the test task depend on the Go build: the root
+    `[tools]` deliberately omits `go` so a fresh clone stays focused on the
+    zero-infrastructure demo, and `DevVault.build_plugin` already rebuilds when a
+    toolchain is present.
+    """
+    if not _PLUGIN_BIN.is_file():
+        return False
+    built = _PLUGIN_BIN.stat().st_mtime
+    plugin_root = _HARNESS / "vault-plugin"
+    return all(
+        src.stat().st_mtime <= built
+        for pattern in ("**/*.go", "**/*.json", "go.mod", "go.sum")
+        for src in plugin_root.glob(pattern)
+        if "/dist/" not in src.as_posix()
+    )
+
+
 @dataclass(frozen=True, kw_only=True, slots=True)
 class DevVaultContext:
     """Handles to a provisioned dev Vault for the Router-side flow."""
@@ -62,13 +91,25 @@ class DevVaultContext:
 class DevVault:
     """Context manager that boots, provisions, and tears down a dev-mode Vault."""
 
-    def __init__(self, *, port: int = 8200, fixdir: str = "/tmp/odis-dev-fix") -> None:  # noqa: S108 — ephemeral dev fixture dir
+    def __init__(self, *, port: int | None = None, fixdir: str | None = None) -> None:
+        """Boot on `port`, or an ephemeral free port when it is not given.
+
+        The port and the fixture directory are per-instance so two suite runs can
+        provision concurrently. A fixed port makes the second run attach to the first
+        run's Vault and authenticate against its JWT role, which surfaces as a 403 from
+        `auth/jwt/login` — indistinguishable from a real provisioning bug.
+        """
         self._bin = vault_bin()
-        self._port = port
-        self._fixdir = fixdir
-        self._addr = f"http://127.0.0.1:{port}"
+        self._port = port if port is not None else free_loopback_port()
+        # The fixture dir holds a live workload JWT, so it is created per instance under
+        # the system temp dir and removed in `_terminate` rather than named by port: a
+        # predictable name is either shared between concurrent runs or left behind by
+        # every one of them, and this material must not outlive its Vault.
+        self._fixdir = fixdir if fixdir is not None else tempfile.mkdtemp(prefix="odis-dev-fix-")
+        self._owns_fixdir = fixdir is None
+        self._addr = f"http://127.0.0.1:{self._port}"
         self._proc: subprocess.Popen[bytes] | None = None
-        self._log = Path(f"/tmp/odis-dev-vault-{port}.log")  # noqa: S108 — ephemeral dev log
+        self._log = Path(f"/tmp/odis-dev-vault-{self._port}.log")  # noqa: S108 — ephemeral dev log
 
     def __enter__(self) -> DevVaultContext:
         if self._bin is None:
@@ -111,13 +152,24 @@ class DevVault:
         self._terminate()
 
     def _terminate(self) -> None:
-        """Terminate the dev Vault subprocess (idempotent; killed if it lingers)."""
-        if self._proc is not None:
-            self._proc.terminate()
-            try:
-                self._proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                self._proc.kill()
+        """Terminate the dev Vault and shred the fixture dir (idempotent).
+
+        The fixture dir goes even if the subprocess teardown raises: it holds a bearer,
+        and leaving it behind is the worse of the two failures.
+        """
+        try:
+            if self._proc is not None:
+                self._proc.terminate()
+                try:
+                    self._proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    self._proc.kill()
+                    # `kill` only signals; without a second wait the dev Vault stays a
+                    # zombie for the life of the test session.
+                    self._proc.wait(timeout=10)
+        finally:
+            if self._owns_fixdir:
+                shutil.rmtree(self._fixdir, ignore_errors=True)
 
     def _wait_ready(self) -> None:
         deadline = time.monotonic() + _READY_TIMEOUT_S
@@ -178,4 +230,4 @@ class DevVault:
                 check=True,
                 capture_output=True,
             )
-        return plugin_built()
+        return plugin_current()

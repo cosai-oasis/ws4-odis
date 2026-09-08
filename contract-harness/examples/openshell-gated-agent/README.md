@@ -9,7 +9,7 @@ agent (MCP client)                ← runs INSIDE an OpenShell sandbox; its netw
    │  MCP over HTTP                  policy (policy.yaml) allows egress ONLY to the
    ▼                                 Router. Default-deny blocks the vendor, the
 ODIS Router  (MCP server)            provider, and the internet.
-   │  policy gate — the bundle's Rego, evaluated by real OPA
+   │  policy gate — the bundle's Rego, evaluated by OPA
    │  the bundle was MINTED + transit-SIGNED by Vault; the Router verified
    │  its ed25519 signature OFFLINE before trusting it (no Vault at gate time)
    ▼
@@ -19,7 +19,7 @@ vendor MCP server                 ← holds its own provider credential; the Rou
 
 ## What it does
 
-`mise run demo-openshell` runs the agent **inside a real OpenShell sandbox** whose egress is
+`mise run demo-openshell` runs the agent **inside an OpenShell sandbox** whose egress is
 locked to the Router only — so a direct call to the vendor is **actually blocked** by the
 sandbox's proxy, making the Router the agent's sole path to a tool. The pipeline: Vault mints
 + transit-signs a bundle → the Router offline-verifies the ed25519 signature → gates an
@@ -36,15 +36,21 @@ toolchain and project are installed. No OpenShell source checkout is required.
 - A **running OpenShell gateway** — brought up from the *published* image:
   ```bash
   bash examples/openshell-gated-agent/gateway/setup.sh          # pulls ghcr.io/nvidia/openshell/gateway, generates JWT keys
-  mise run openshell-connect                                  # register/select; status -> Connected
+  mise run openshell-connect                                  # registers/selects the gateway named `odis`
   ```
 - **Docker** and **OpenSSL** (the gateway builds the sandbox image, runs sandbox
   containers, and generates local gateway keys), plus
   `vault` + the built `apf-bundle-issuer` plugin + `opa` (as for any Vault path). The
-  `openshell` CLI is provided by mise (`pipx:openshell`).
+  `openshell` CLI is provided by mise (`pipx:openshell`), pinned to the same version as the
+  gateway image in `gateway/docker-compose.yml` — the CLI and the gateway it drives run one
+  version. Override the gateway with `IMAGE_TAG` to try another.
 - **Host port 8080 free.** The sandbox→gateway callback dials
   `host.openshell.internal:8080` through the host-published mapping, so the gateway
   must own host port 8080 — `setup.sh` fails fast when something else holds it.
+  That name resolves to the gateway address of the `openshell-docker` network sandboxes
+  run on, not to loopback, so `setup.sh` also creates that network up front and writes a
+  `docker-compose.override.yml` publishing the control plane on it. Without that address
+  published, sandbox provisioning fails with `Policy fetch failed`.
 
 **Run:**
 
@@ -80,6 +86,22 @@ intercepts every CONNECT; `policy.yaml` authorizes the agent's **one** egress �
 — so a direct call to the vendor is refused (you see the `BLOCKED` line above). Take the
 substrate away and the gate becomes advisory: an agent could just skip the Router.
 
+The sandbox bounds the **agent**; it does not bound anyone else. This example binds both the
+Router and the vendor stub to `0.0.0.0` and serves the MCP surface with no inbound verifier
+(`requires_authenticated_caller=False`), so for as long as a run lasts the Router answers any
+host that can route to this machine, unauthenticated.
+
+A loopback bind genuinely would not work for the Router: the sandbox reaches it over the
+`openshell-docker` bridge, arriving from that network rather than from `127.0.0.1`. But that
+rules out loopback, not everything narrower — `gateway/setup.sh` already computes the bridge's
+gateway address for its own callback publish, and the vendor stub is only ever called by the
+Router over loopback. So each could bind to one address instead of all of them. Binding both
+to `0.0.0.0` is a convenience of this example, not a requirement of the substrate.
+
+It is acceptable here only because the vendor is an in-process stub holding no credential.
+A deployment forwarding to a production vendor must arm `--inbound-key` and bind narrowly;
+both are follow-ups, and the startup banner states the posture in force.
+
 Boundary, stated plainly: current OpenShell can enforce MCP methods and tool names at L7,
 but not tool-argument constraints. This example intentionally uses a host-scoped allow to
 make the Router the only reachable MCP endpoint. The Router then demonstrates the extra
@@ -98,7 +120,7 @@ docker compose -f examples/openshell-gated-agent/gateway/docker-compose.yml down
 
 | Path | Purpose |
 |------|---------|
-| `openshell_demo.py` | The demo — agent inside a real OpenShell sandbox (egress enforced). |
+| `openshell_demo.py` | The demo — agent inside an OpenShell sandbox (egress enforced). |
 | `policy.yaml` | OpenShell network policy: the agent's only egress is the Router (`host.openshell.internal:8088`). |
 | `sandbox/Dockerfile` | Sandbox image = base + the MCP client (baked at build time). |
 | `sandbox/agent.py` | The agent run inside the sandbox: blocked-vendor check + allow/deny calls through the Router. |

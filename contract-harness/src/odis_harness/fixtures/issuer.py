@@ -7,7 +7,7 @@ the validate / map / sign path is unchanged.
 
 Fixture/dev material only: the private key is generated in-process, never persisted.
 It exists to make the issuance flow exercisable hermetically. ES256 (EC P-256) mirrors
-the shape of a real JWT-SVID.
+the shape of a JWT-SVID.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ _DEFAULT_TTL = timedelta(minutes=5)
 
 @dataclass(frozen=True, kw_only=True, slots=True)
 class FixtureIdentityIssuer:
-    """An in-process ES256 issuer standing in for a real workload IdP."""
+    """An in-process ES256 issuer standing in for SPIRE."""
 
     issuer: str
     key_id: str
@@ -68,6 +68,15 @@ class FixtureIdentityIssuer:
         if claims:
             payload.update(claims)
         return jwt.encode(payload, self.private_key, algorithm=_ALG, headers={"kid": self.key_id})
+
+    def public_key(self) -> ec.EllipticCurvePublicKey:
+        """The signing key's public half, parsed.
+
+        The sibling of `public_pem` and `jwks`, for a caller that wants the key object —
+        `WorkloadJwtVerifier` takes parsed keys, and without this every such caller
+        re-parses the PEM this class just serialized.
+        """
+        return self.private_key.public_key()
 
     def public_pem(self) -> bytes:
         """The signing key's public half as PEM (SubjectPublicKeyInfo)."""

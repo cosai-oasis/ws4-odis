@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"odis-contract-harness/vault-plugin/internal/apfbundle"
+	"odis-contract-harness/vault-plugin/internal/policydsl"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -14,11 +16,28 @@ func sampleBundle() apfbundle.Bundle {
 		BundleID:      "odis-fixture-bundle",
 		BundleVersion: "0.1.0",
 		TrustRootID:   "fixture-trust-root",
+		// Delegation provenance (ODIS-L2-05): the golden covers it, so the
+		// cross-language canonical form is pinned over the full issued shape.
+		Actor:                "spiffe://example.org/agent/jira",
+		OriginatingPrincipal: "vault:token:token",
+		ContributingRecords: []apfbundle.MappingRecordRef{
+			{Name: "jira", Version: 1, Digest: "sha256:" + strings.Repeat("ab", 32)},
+		},
+		DelegationChain: apfbundle.RootDelegationChain(),
+		// The real profile ref, not a placeholder: the golden is what the Python
+		// harness resolves the attenuation profile against.
+		AttenuationProfileRef: &apfbundle.AttenuationProfileRef{
+			URI:    policydsl.AttenuationProfileURI,
+			Digest: policydsl.AttenuationProfileDigest(),
+		},
+		IssuedAt:  "2026-08-27T12:00:00Z",
+		ExpiresAt: "2026-08-27T13:00:00Z",
 		Families: map[string]apfbundle.Family{
 			"jira-prod": {
 				VendorMCP: apfbundle.VendorMCP{
 					EndpointID: "jira-prod-mcp-v1",
 					URL:        "https://jira-prod-mcp.internal:8443/",
+					EgressMode: apfbundle.EgressModeBridge,
 				},
 				Policy: "package odis_policy\n\n" +
 					"default decision := {\"decision\": \"deny\", \"obligations\": {}}\n",
@@ -58,7 +77,8 @@ func TestCanonicalKeysSorted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CanonicalBytes: %v", err)
 	}
-	want := `{"bundle_id":"odis-fixture-bundle","bundle_version":"0.1.0","families":`
+	want := `{"actor":"spiffe://example.org/agent/jira",` +
+		`"attenuation_profile_ref":{"digest":`
 	if !bytes.HasPrefix(got, []byte(want)) {
 		t.Errorf("keys not sorted at top level; got prefix %s", got[:min(len(got), len(want))])
 	}
@@ -146,5 +166,80 @@ func TestCanonicalGolden(t *testing.T) {
 	// The golden must itself be valid JSON.
 	if !json.Valid(want) {
 		t.Error("golden is not valid JSON")
+	}
+}
+
+// The provenance fields are omitted when unset, so a bundle assembled without a
+// delegation record (a local, unissued grant) canonicalizes to the envelope-only
+// shape the schema also accepts.
+func TestCanonicalOmitsAbsentProvenance(t *testing.T) {
+	t.Parallel()
+
+	bare := sampleBundle()
+	bare.Actor = ""
+	bare.OriginatingPrincipal = ""
+	bare.ContributingRecords = nil
+	bare.DelegationChain = nil
+	bare.AttenuationProfileRef = nil
+	bare.IssuedAt = ""
+	bare.ExpiresAt = ""
+
+	got, err := apfbundle.CanonicalBytes(bare)
+	if err != nil {
+		t.Fatalf("CanonicalBytes: %v", err)
+	}
+	for _, key := range []string{
+		"actor", "originating_principal", "contributing_records",
+		"attenuation_profile_ref", "issued_at", "expires_at", "delegation_chain",
+	} {
+		if bytes.Contains(got, []byte(`"`+key+`"`)) {
+			t.Errorf("unset %s must be omitted from the canonical form:\n%s", key, got)
+		}
+	}
+}
+
+// egress_mode rides inside the signed bytes, so the per-target declaration
+// (ODIS-L2-15) cannot be altered without breaking the signature.
+func TestCanonicalCarriesEgressMode(t *testing.T) {
+	t.Parallel()
+
+	got, err := apfbundle.CanonicalBytes(sampleBundle())
+	if err != nil {
+		t.Fatalf("CanonicalBytes: %v", err)
+	}
+	if !bytes.Contains(got, []byte(`"egress_mode":"bridge"`)) {
+		t.Errorf("canonical form does not declare egress_mode:\n%s", got)
+	}
+}
+
+// CanonicalJSON is the one canonicalizer: any value, sorted keys at every level.
+func TestCanonicalJSONSortsAnyValue(t *testing.T) {
+	t.Parallel()
+
+	got, err := apfbundle.CanonicalJSON(map[string]any{"z": 1, "a": map[string]any{"y": 2, "b": 3}})
+	if err != nil {
+		t.Fatalf("CanonicalJSON: %v", err)
+	}
+	if want := `{"a":{"b":3,"y":2},"z":1}`; string(got) != want {
+		t.Errorf("CanonicalJSON = %s, want %s", got, want)
+	}
+}
+
+// An explicitly EMPTY delegation_chain is the assertion that this grant is a root
+// record — one operator-to-agent hop, no sub-delegation. It rides in the signed bytes,
+// so the assertion is protected; and it must serialize as [] rather than null, which
+// the schema would reject.
+func TestCanonicalCarriesEmptyDelegationChain(t *testing.T) {
+	t.Parallel()
+
+	got, err := apfbundle.CanonicalBytes(sampleBundle())
+	if err != nil {
+		t.Fatalf("CanonicalBytes: %v", err)
+	}
+	if !bytes.Contains(got, []byte(`"delegation_chain":[]`)) {
+		t.Errorf("canonical form does not assert a root delegation chain:\n%s", got)
+	}
+	if bytes.Contains(got, []byte(`"delegation_chain":null`)) {
+		t.Error("delegation_chain serialized as null; the schema requires an array")
 	}
 }

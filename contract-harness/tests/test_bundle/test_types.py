@@ -31,6 +31,22 @@ def test_vendor_mcp_endpoint_id_pattern_enforced(endpoint_id: str) -> None:
         VendorMcp(endpoint_id=endpoint_id, url="https://example.invalid/")
 
 
+@pytest.mark.parametrize("url", ["not-a-url", "ftp://example.invalid/", "//example.invalid/"])
+def test_vendor_mcp_url_scheme_enforced(url: str) -> None:
+    """`url` is schema-constrained to `^https?://`, and the dataclass re-checks it.
+
+    `build_router_from_bundle` is a documented seam that never sees the schema, so
+    without this a programmatic caller could route a family at an unreachable scheme.
+    """
+    with pytest.raises(ValueError, match="url"):
+        VendorMcp(endpoint_id="jira-prod", url=url)
+
+
+@pytest.mark.parametrize("url", ["http://example.invalid/", "https://example.invalid/mcp"])
+def test_vendor_mcp_accepts_http_and_https(url: str) -> None:
+    assert VendorMcp(endpoint_id="jira-prod", url=url).url == url
+
+
 @pytest.mark.parametrize("family_name", ["Jira_Prod", "1-bad", "has space"])
 def test_bundle_family_name_pattern_enforced(family_name: str) -> None:
     """A family name the router can't parse would be advertised yet unroutable;

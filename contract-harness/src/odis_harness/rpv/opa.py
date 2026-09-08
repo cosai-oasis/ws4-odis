@@ -1,7 +1,7 @@
 """`opa eval` subprocess wrapper.
 
 Spawns the `opa` binary in a sandboxed mode and parses the result. The sandbox
-makes the "hermetic policy evaluation" claim real on two fronts: a minimal
+makes the "hermetic policy evaluation" claim hold on two fronts: a minimal
 process environment (so a policy's `opa.runtime().env` cannot read the Router's
 secrets) and a capabilities allowlist that removes the network/DNS built-ins
 (`http.send`, `net.lookup_ip_addr`) — a bundle's Rego cannot exfiltrate.
@@ -84,7 +84,7 @@ def opa_eval(
     input_payload: Mapping[str, Any],
     query: str = "data.odis_policy.decision",
 ) -> Any:  # noqa: ANN401 — Rego decision shape varies by query
-    """Evaluate `query` against `rego_path` with `input_payload` as `--input`.
+    """Evaluate `query` against `rego_path` with `input_payload` on stdin (`--stdin-input`).
 
     Returns the parsed result `value`. Raises `OpaEvalError` if the binary
     exits non-zero, returns no expressions, or returns unparseable JSON.

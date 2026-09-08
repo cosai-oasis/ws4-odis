@@ -67,6 +67,7 @@ func TestMappingPolicySpecRoundTrips(t *testing.T) {
 		Path:      "mappings/rt",
 		Storage:   s,
 		Data:      map[string]any{fieldBoundSubject: "spiffe://example.org/agent", fieldBundle: grantJSON},
+		EntityID:  testWriterEntityID,
 	})
 	if err != nil {
 		t.Fatalf("write mapping: %v", err)
@@ -112,6 +113,7 @@ func TestMappingReadHandlerEchoesGrant(t *testing.T) {
 		Path:      "mappings/echo",
 		Storage:   s,
 		Data:      map[string]any{fieldBoundSubject: "spiffe://example.org/agent", fieldBundle: minimalGrantJSON},
+		EntityID:  testWriterEntityID,
 	}); err != nil {
 		t.Fatalf("write mapping: %v", err)
 	}
@@ -156,6 +158,7 @@ func writeMapping(t *testing.T, grantJSON string) (*logical.Response, error) {
 		Path:      "mappings/x",
 		Storage:   s,
 		Data:      map[string]any{fieldBoundSubject: "spiffe://example.org/agent", fieldBundle: grantJSON},
+		EntityID:  testWriterEntityID,
 	})
 }
 
