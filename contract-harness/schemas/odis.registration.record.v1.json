@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apf.local/schemas/odis.registration.record.v1.json",
+  "title": "ODIS Agent Registration Record (RFC §6.1)",
+  "description": "The durable organizational governance record for a logical agent. Carrier: a canonical JSON document (sorted keys, compact separators, UTF-8) plus a detached ed25519 signature. The bytes signed, the bytes digested into record_digest, and the bytes stored are the same bytes.",
+  "type": "object",
+  "required": [
+    "record_id",
+    "record_issuer",
+    "schema_version",
+    "record_version",
+    "agent_id",
+    "valid_until",
+    "lifecycle_state",
+    "sponsor_ref",
+    "owner_ref",
+    "approved_runtime_issuers",
+    "approved_software_refs",
+    "trust_domain",
+    "policy_profile_ref",
+    "permitted_delegation_modes",
+    "created_at",
+    "updated_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "record_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Collision-resistant identifier for this Agent Registration Record."
+    },
+    "record_issuer": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Authoritative issuer of the registration record. The loader keys its verifier map by this value, so a document claiming issuer A verifies only against A's key."
+    },
+    "schema_version": {
+      "type": "string",
+      "const": "odis.registration.record.v1",
+      "description": "Version of the Agent Registration Record schema. Distinct from contracts.SCHEMA_VERSION, which is envelope metadata."
+    },
+    "record_version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991,
+      "description": "Monotonically increasing version for rollback detection. The floor of 1 makes a zero default safe for a high-water mark. The ceiling is 2^53 - 1: this value is serialised into the canonical document as a bare number, so anything above the exact-integer range of an IEEE 754 double would digest here and fail to reproduce in an ECMAScript-derived verifier. Enforced again in the dataclass, because a record can be constructed without passing through this schema."
+    },
+    "agent_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable logical agent identifier."
+    },
+    "valid_until": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+      "description": "Latest time at which this record version may be treated as current without authenticated refresh. Pinned by `pattern`, not by `format`: jsonschema only checks `date-time` when an optional RFC 3339 validator is installed, and this field is part of the signed canonical bytes, so it cannot be left to an optional dependency. The pattern is narrower than RFC 3339 on purpose — canonicalisation normalises to UTC with microsecond precision, so a document carrying an offset would not reproduce its own canonical bytes."
+    },
+    "lifecycle_state": {
+      "type": "string",
+      "enum": ["active", "suspended", "revoked", "pending"],
+      "description": "The RFC's 'or equivalent' is answered by declaring a closed set and failing closed on anything outside it."
+    },
+    "sponsor_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Accountable human sponsor or service-owner record."
+    },
+    "owner_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Owning team, application, or business unit."
+    },
+    "approved_runtime_issuers": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Runtime credential issuers trusted for this agent. Declared order is significant and is part of record_digest."
+    },
+    "approved_software_refs": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Approved software hashes, package identities, image digests, signing identities, or provenance references. Declared order is significant and is part of record_digest."
+    },
+    "trust_domain": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Organizational trust boundary. A resolver refuses a record whose trust_domain is outside the issuer's configured authority."
+    },
+    "policy_profile_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Policy profile or policy context associated with this agent."
+    },
+    "permitted_delegation_modes": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Delegation modes permitted for this agent. Declared order is significant and is part of record_digest."
+    },
+    "provider_entitlements": {
+      "type": "object",
+      "description": "SHOULD. Provider adapter mappings, allowed scopes, roles, grants, or mediated paths. When absent the key is omitted entirely, never null, so a record without entitlements digests identically to one that never had the key. Numeric values anywhere inside this object MUST be integers within +/-(2^53 - 1); floats are refused. The float refusal cannot be expressed as a keyword: JSON has one number type, so `1` and `1.0` are the same value and `\"type\": \"integer\"` accepts both, while Python and ECMAScript spell them differently and would produce different record_digest values. The bound could be expressed, with a recursive subschema reaching every nested number, and is deliberately not: splitting one rule so that half of it is enforced by a keyword here and half by prose is how the two halves drift apart. Both halves are enforced in canonical.frozen_json and specified in registration/digest.py's rule table; do not attempt to restate either as a keyword here."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+      "description": "Registration creation time. Same canonical form as valid_until."
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+      "description": "Trusted last-update time assigned by record_issuer. Same canonical form as valid_until. Never earlier than created_at — an ordering the dataclass enforces, since JSON Schema cannot compare two properties."
+    }
+  }
+}
