@@ -696,9 +696,9 @@ Resolution rule: A resolver MUST authenticate record_issuer and the record’s i
 |----|----|----|----|
 | credential_id | string | MUST | Collision-resistant identifier for this Agent Runtime Credential |
 | format_version | string | MUST | Version of the credential descriptor or carrier profile |
-| agent_id | string | MUST | Stable logical agent identifier |
-| registration_record_ref | object | MUST | Authenticated reference containing record_issuer, record_id, record_version, and record_digest for the active Agent Registration Record |
-| runtime_instance_id | string | MUST | Unique identifier for the running agent instance |
+| agent_id | string | SHOULD | Stable logical agent identifier |
+| registration_record_ref | object | SHOULD | Authenticated reference containing record_issuer, record_id, record_version, and record_digest for the active Agent Registration Record |
+| runtime_instance_id | string | SHOULD | Unique identifier for the running agent instance |
 | software_hash | string | MUST | Digest of the verified software artifact |
 | attestation_evidence | array | MUST | At least one independently verifiable software-provenance evidence object and at least one independently verifiable runtime/workload evidence object. Each object MUST contain type, issuer, subject, issued_at, expires_at or maximum_age, evidence reference or embedded proof, and integrity metadata. Hardware evidence MAY be included only as additional evidence |
 | issuer | string | MUST | Identity of the runtime credential issuer |
