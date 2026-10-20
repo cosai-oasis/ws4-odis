@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Test aid for cosai-oasis/ws4-odis#38, not a proposed ODIS schema. Starts from contract-harness/schemas/odis.registration.record.v1.json at 10a718a (#11) and changes only what #38 changes in 6.1: typed approved_software_refs entries, the policy_profile_ref object form, and the four optional fields.",
+  "type": "object",
+  "required": [
+    "record_id",
+    "record_issuer",
+    "schema_version",
+    "record_version",
+    "agent_id",
+    "valid_until",
+    "lifecycle_state",
+    "sponsor_ref",
+    "owner_ref",
+    "approved_runtime_issuers",
+    "approved_software_refs",
+    "trust_domain",
+    "policy_profile_ref",
+    "permitted_delegation_modes",
+    "created_at",
+    "updated_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "record_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "record_issuer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schema_version": {
+      "type": "string",
+      "const": "odis.registration.record.v1"
+    },
+    "record_version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "agent_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "valid_until": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$"
+    },
+    "lifecycle_state": {
+      "type": "string",
+      "enum": [
+        "active",
+        "suspended",
+        "revoked",
+        "pending"
+      ]
+    },
+    "sponsor_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "owner_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "approved_runtime_issuers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "approved_software_refs": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "object",
+            "required": [
+              "ref_type",
+              "digest"
+            ],
+            "properties": {
+              "ref_type": {
+                "type": "string",
+                "minLength": 1
+              },
+              "digest": {
+                "type": "string",
+                "pattern": "^(sha256:[0-9a-f]{64}|sha384:[0-9a-f]{96}|sha512:[0-9a-f]{128})$"
+              },
+              "digest_input": {
+                "type": "string"
+              },
+              "uri": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              },
+              "assurance": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "trust_domain": {
+      "type": "string",
+      "minLength": 1
+    },
+    "policy_profile_ref": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "object",
+          "required": [
+            "uri",
+            "digest",
+            "enforcement_mode"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "uri": {
+              "type": "string",
+              "minLength": 1
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^(sha256:[0-9a-f]{64}|sha384:[0-9a-f]{96}|sha512:[0-9a-f]{128})$"
+            },
+            "enforcement_mode": {
+              "enum": [
+                "enforce",
+                "advisory",
+                "audit-only"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "permitted_delegation_modes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "provider_entitlements": {
+      "type": "object"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$"
+    },
+    "declared_intent": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reference_values": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "evidence_type",
+          "measurement",
+          "value"
+        ],
+        "properties": {
+          "value": {
+            "type": "string",
+            "pattern": "^(sha256:[0-9a-f]{64}|sha384:[0-9a-f]{96}|sha512:[0-9a-f]{128})$"
+          }
+        }
+      }
+    },
+    "evidence_requirements": {
+      "type": "object"
+    },
+    "extensions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object"
+      }
+    }
+  }
+}

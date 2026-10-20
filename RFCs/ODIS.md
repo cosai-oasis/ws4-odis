@@ -680,15 +680,44 @@ The durable organizational governance record for a logical agent.
 | sponsor_ref | string | MUST | Accountable human sponsor or service-owner record |
 | owner_ref | string | MUST | Owning team, application, or business unit |
 | approved_runtime_issuers | array | MUST | Runtime credential issuers trusted for this agent |
-| approved_software_refs | array | MUST | Approved software hashes, package identities, image digests, signing identities, or provenance references |
+| approved_software_refs | array | MUST | Approved software hashes, package identities, image digests, signing identities, or provenance references. Each entry is a string or a typed reference object as defined in 6.1.1 |
 | trust_domain | string | MUST | Organizational trust boundary |
-| policy_profile_ref | string | MUST | Policy profile or policy context associated with this agent |
+| policy_profile_ref | string or object | MUST | Policy profile or policy context associated with this agent. When the policy bundle is part of the registration, this SHOULD be an object containing uri, digest, and enforcement_mode (enforce, advisory, or audit-only) |
 | permitted_delegation_modes | array | MUST | Delegation modes permitted for this agent |
 | provider_entitlements | object | SHOULD | Provider adapter mappings, allowed scopes, roles, grants, or mediated paths |
+| declared_intent | string | MAY | Purpose of the agent as declared by record_issuer. It is covered by the record's integrity protection and MUST NOT be supplied by the agent itself |
+| reference_values | array | MAY | Expected values against which a verifier appraises attestation evidence, such as launch measurements. Each entry names the evidence type, the measurement, and its digest algorithm |
+| evidence_requirements | object | MAY | Evidence this registration requires before a credential is issued or accepted, stated per relationship (for example instance_to_software and instance_to_key) |
+| extensions | object | MAY | Named profile extensions as defined in 6.1.2 |
 | created_at | timestamp | MUST | Registration creation time |
 | updated_at | timestamp | MUST | Trusted last-update time assigned by record_issuer |
 
 Resolution rule: A resolver MUST authenticate record_issuer and the record’s integrity protection, verify issuer authorization for the trust domain, reject stale or superseded versions, enforce valid_until, detect rollback using record_version, and fail closed when authoritative resolution is unavailable or indeterminate.
+
+The optional fields above, the typed references in 6.1.1, and the profile extensions in 6.1.2 carry what the CoSAI Agent Manifest RFC (WS4 RFC-149) specified as a standalone document. In ODIS terms, an agent manifest is an Agent Registration Record together with the profile extensions it carries. A record that omits these fields remains conformant.
+
+#### 6.1.1 Typed Software References
+
+An entry in approved_software_refs MAY be an object instead of a string. A typed reference has these fields:
+
+| Field | Type | Required | Description |
+|----|----|----|----|
+| ref_type | string | MUST | Kind of artifact referenced. Initial values: software-artifact, source-bundle, provenance, sbom, model, tool-catalog, prompt, composition. Profiles MAY register additional values |
+| digest | string | MUST | Digest of the referenced content, prefixed with its algorithm (for example sha256:) |
+| digest_input | string | SHOULD | Name of the exact bytes or canonicalization profile the digest was computed over |
+| uri | string | MAY | Location of the referenced content |
+| role | string | MAY | Distinguishes entries of the same ref_type, for example harness image and base image |
+| assurance | array | MAY | Assessment results about the referenced content. Each result names the test, its outcome, the time of assessment, and the digest of its supporting evidence |
+
+A typed reference MAY carry additional fields defined for its ref_type, such as format or builder_id.
+
+A model reference covers model weights for locally hosted or confidential-inference models. A tool-catalog reference is a single digest over the approved tool definitions. A prompt reference applies only to a prompt managed outside the packaged software artifact, since a bundled prompt is already covered by software_hash in 6.2. A composition reference is one digest over a profile extension in this record that lists components approved together, such as a model, a tool catalog, and a prompt. Its uri points at that extension (for example #/extensions/example-profile-v1) and its digest_input names how the extension was serialized. An sbom reference is supplemental inventory and MUST NOT by itself satisfy ODIS-L1-02.
+
+#### 6.1.2 Profile Extensions
+
+Content that changes on a different schedule from the agent, or that only some deployments need, is carried in named profiles rather than core fields. Examples include RAG corpus bindings, memory baselines, audit chain commitments, human oversight endpoints, and regulatory declarations.
+
+The extensions field is an object whose keys are profile names, each including its version (for example example-profile-v1), and whose values are the profile content. Profile content is covered by the record's integrity protection. A relying party that requires a profile MUST reject a record that does not carry it. A relying party that does not recognize a profile MAY ignore it, and MUST NOT treat it as satisfied.
 
 ### 6.2 Agent Runtime Credential Descriptor
 
