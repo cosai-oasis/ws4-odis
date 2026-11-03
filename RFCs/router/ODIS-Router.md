@@ -252,13 +252,13 @@ The Router MUST include the required fields and only the optional inputs needed 
 
 *Core; L3-06, §6.4*
 
-The policy engine MUST return one of four outcomes ([Section 3.4](#34-policy-response)): `permit`, `deny`, `not_applicable`, or `indeterminate`. These outcomes MUST remain distinct for audit and operations, because a policy refusal and an evaluation failure require different responses. A policy that allows by default MUST return `permit` when no rule matches, which makes the default explicit in the policy; `not_applicable` stops the call. An engine that returns only `permit` or `deny`, without obligations or guidance, is complete.
+The policy engine MUST return one of the outcomes in [Section 3.4](#34-policy-response). They MUST remain distinct for audit and operations, because a policy refusal and an evaluation failure require different responses. A policy that allows by default MUST return `permit` when no rule matches; `not_applicable` stops the call.
 
 ##### RTR-20 Enforceable permit
 
 *Core; §6.4*
 
-Only a permit the Router can enforce in full allows dispatch. The Router MUST stop the call on `deny`, `not_applicable`, or `indeterminate`; on a missing, unreadable, unknown, mismatched, or expired response; or when it cannot enforce a permit in full. An unknown or unenforceable obligation makes the permit a denial, and a Router without obligation support MUST deny any permit carrying an obligation. The Router MUST record the reason so operators can distinguish policy refusals from failures.
+Only an enforceable permit allows dispatch. The Router MUST stop the call on any other outcome, on a missing or unreadable response, or on a permit that is not enforceable, and MUST record the reason so operators can distinguish policy refusals from failures.
 
 ##### RTR-21 Guidance and advice
 
@@ -280,7 +280,7 @@ The Router MUST assign each policy request a unique `evaluation_id`. The policy 
 
 *Core; L2-13*
 
-The Router MUST retain the incoming call unchanged and derive the policy request from it. A transformation defined by Router or gateway configuration, never by the agent, MAY run before evaluation; the transformed call then becomes the retained call, so policy evaluates it and dispatch MUST match it. Before dispatch, it MUST confirm that the operation, arguments, resolved target, and route still match what was evaluated; if any of these or the permit's obligations change, it MUST obtain a new decision. The Router MAY add a downstream credential after approval but MUST NOT change the evaluated operation or arguments. A digest of arguments may detect a change, but it cannot by itself bind a decision to the target, route, and retained call.
+The Router MUST retain the incoming call unchanged as the evaluated call, apart from any argument binding (RTR-66), and derive the policy request from it. Before dispatch, it MUST confirm that the call it is about to send still matches the evaluated call; if it does not, or the permit's obligations change, it MUST obtain a new decision. The Router MAY add a downstream credential after the decision but MUST NOT change the evaluated operation or arguments.
 
 ##### RTR-24 Freshness and single use
 
@@ -338,7 +338,7 @@ Caching and invalidating derived credentials belong to the Cache and Revocation 
 
 *Core; CC-06*
 
-The component performing the final exchange MUST record the delegation, tool, and credential used. Its record and the Router's decision record SHOULD share the `evaluation_id`, linking authorization to the credential presented downstream.
+The Provider Adapter MUST record each exchange with the call's `evaluation_id`, so it links to the decision record (RTR-52, [Section 3.6](#36-decision-record)).
 
 #### 2.1.8 Authority limits
 
@@ -507,7 +507,7 @@ The Router MUST NOT record raw tokens, private keys, downstream credentials, or 
 
 *Core; CC-01*
 
-The Bridge records its grant, the Router its decision, the provider adapter the final credential exchange, and the tool may record execution. The exchange and decision records SHOULD share the `evaluation_id` (RTR-32). Each Router on a path MUST record its own decision; the `request_trace_id` correlates those records.
+The Bridge records its grant, the Router its decision, the provider adapter the final credential exchange, and the tool may record execution. The exchange and decision records SHOULD share the `evaluation_id`. Each Router on a path MUST record its own decision; the `request_trace_id` correlates those records.
 
 ##### RTR-53 Audit write rule
 
@@ -525,7 +525,7 @@ An obligation is a condition attached to a permit ([Section 3.5](#35-obligation)
 
 *no profile; §6.4*
 
-Obligation support is optional. A Router without it denies any permit carrying an obligation (RTR-20), and an engine can instead deny with guidance about a later request (RTR-21). A Router that supports obligations MUST fulfill all obligations on a permit. Each obligation MUST identify its definition by URL and version, its stage, and any parameters; a bare name such as `redact` is insufficient because its meaning may differ between deployments. The deployment MUST publish the supported definitions, versions, and the component responsible for each.
+Obligation support is optional. An obligation the Router does not support or cannot meet makes the permit unenforceable (RTR-20), so a Router without obligation support denies any permit carrying one; an engine can instead deny with guidance about a later request (RTR-21). A Router that supports obligations MUST fulfill all obligations on a permit. Each obligation MUST identify its definition by URL and version, its stage, and any parameters; a bare name such as `redact` is insufficient because its meaning may differ between deployments. The deployment MUST publish the supported definitions, versions, and the component responsible for each.
 
 ##### RTR-55 Before the call
 
@@ -598,6 +598,12 @@ Where the deployment requires durable records (RTR-53), the component performing
 *Safety; CC-01*
 
 Deployments needing strong assurance MUST make later alteration or deletion of records detectable, by hash-chaining records or an equivalent append-only log, and MUST store them beyond the agent host operator's control. A signed policy response MAY be retained as decision evidence.
+
+##### RTR-66 Argument binding
+
+*no profile; L2-13*
+
+A deployment MAY configure the Router to set an argument from a verified attribute, overriding any value the agent supplied, such as a tool's `on_behalf_of` from the verified principal, or to normalize an argument to the tool's declared schema by a declared, deterministic rule. Binding MUST run before evaluation, so the policy request and dispatch both use the bound call, MUST NOT change the operation or add arguments other than bound ones, and MUST be recorded in the decision record. Selecting the service or instance that handles the call is target resolution (RTR-12, RTR-13), not binding.
 
 ## 3. Schema definitions
 
@@ -711,7 +717,7 @@ One per decision (RTR-50). Each includes the following. If the Router denies bef
 - the agent, running instance, and software digest, which supports later attribution of actions to a particular software version;
 - the principal, original delegation, and task;
 - the caller-visible name, resolved tool, and affected resources;
-- the policy request evaluated, with arguments only where the deployment requires them (RTR-51), and the response;
+- the policy request evaluated, with arguments only where the deployment requires them (RTR-51), any arguments bound and their sources (RTR-66), and the response;
 - the overall decision and reason, plus each consulted source's decision;
 - obligations and whether each was met;
 - whether the call was dispatched and, if not, where it stopped; and
@@ -898,7 +904,7 @@ References identify the affected requirements or ODIS issues.
 
 **Enforceable permit.** A `permit` that matches the pending evaluation, is within its validity period and unused, and carries only obligations the Router supports and can meet.
 
-**Evaluated call.** The call as the Router received and retained it, from which the policy request is derived and which dispatch must match: operation, arguments, resolved target, and route.
+**Evaluated call.** The call as the Router received and retained it, after any argument binding (RTR-66), from which the policy request is derived and which dispatch must match: operation, arguments, resolved target, and route.
 
 **Gateway.** A component that offers tools from several servers under its own names. The Router often runs within it.
 
