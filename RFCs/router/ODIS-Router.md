@@ -54,12 +54,12 @@ A Router sits on the path between an agent and the tools and services the agent 
 3. **Resolve:** determine the actual server, operation, and resources ([2.1.3](#213-target-resolution)).
 4. **Request a decision:** send the policy engine the required and declared inputs ([2.1.4](#214-policy-request)).
 5. **Validate the decision:** confirm the response belongs to this evaluation and is still fresh ([2.1.5](#215-decision-handling), [2.1.6](#216-decision-binding)).
-6. **Enforce:** meet any obligations, recheck revocation, apply a downstream credential, and dispatch the retained call, or stop ([2.1.7](#217-downstream-credentials), [2.1.9](#219-revocation), [2.2.1](#221-obligations)).
+6. **Enforce:** meet any obligations, recheck revocation, apply a downstream credential, and dispatch the retained call, or stop ([2.1.7](#217-hand-off-to-the-provider-adapter), [2.1.9](#219-revocation), [2.2.1](#221-obligations)).
 7. **Record:** write the decision record ([2.1.12](#2112-audit)). Where [RTR-64](#rtr-64-durable-record-before-irreversible-effects) applies, the component performing an irreversible effect commits an intent before that effect and records its outcome afterward.
 
 The Router verifies inputs and enforces outcomes; a policy engine applies organizational rules to Router-supplied inputs and decides. The Router and the policy engine may run together or separately. The Router's components may share a process or run separately, but the agent does not control them (RTR-01). Verification and target resolution use trusted keys, revocation data, routing configuration, and registry records rather than agent-supplied claims.
 
-Most tools do not understand ODIS tokens. The Bridge's provider adapter uses Bridge-recorded authority to obtain a credential the tool accepts. In a gateway, the adapter may run alongside the Router. In a separate deployment, the Router may request the credential from the adapter, or an adapter later in the path may attach it.
+Most tools do not understand ODIS tokens. ODIS assigns credential translation to Layer 2 ([§3.2](../ODIS.md#32-layer-2--the-bridge-delegation--access)): a Provider Adapter conveys ODIS credentials to a native-mode target or obtains a target-native credential in bridge mode (ODIS-L2-15), and a Cache and Revocation Manager holds derived credentials and invalidates them on revocation. The Router does not take on that role; it decides, and only then lets the adapter act ([2.1.7](#217-hand-off-to-the-provider-adapter)). The adapter may run in the same gateway as the Router, be called by it, or sit later in the path.
 
 The Router's inputs arrive in three ways:
 
@@ -293,9 +293,9 @@ The Router MUST act on a response only within its `issued_at` to `expires_at` in
 
 When the policy engine runs as a separate service, the Router and the engine MUST authenticate each other and protect the request and response against modification. Mutually authenticated TLS is one option; verified HTTP Message Signatures are another and can preserve a signed decision as evidence. An in-process engine shares the Router's trust boundary.
 
-#### 2.1.7 Downstream credentials
+#### 2.1.7 Hand-off to the Provider Adapter
 
-Most tools require a credential issued for their own access system, such as an OAuth token, cloud role, or API key, rather than an ODIS token.
+Most tools require a credential issued for their own access system, such as an OAuth token, cloud role, or API key, rather than an ODIS token. These requirements cover when the Provider Adapter may act for a call and what the Router requires of it. The adapter's own behaviour is specified by ODIS-L2-08, L2-10 and L2-15.
 
 ##### RTR-26 Decision before credential
 
@@ -307,7 +307,7 @@ The provider adapter MUST NOT issue or apply a downstream credential for a call 
 
 *Core; L2-10*
 
-The credential used for a permitted call MUST remain under Router or provider adapter control. The agent MUST NOT receive, store, or present a downstream credential; otherwise it could bypass the Router with an unevaluated call.
+A downstream credential for a permitted call MUST stay with the Provider Adapter or the Router (ODIS-L2-10). The agent MUST NOT receive, store, or present one; otherwise it could bypass the Router with an unevaluated call.
 
 ##### RTR-28 Credential scope
 
@@ -321,17 +321,17 @@ The Bridge token covers the agent's task; a policy decision covers one call. As 
 
 A Bridge token bound to the agent's key can be used only by the agent, so the provider adapter MUST NOT present it to another identity provider. The adapter MUST instead request the downstream credential on its own credential, naming the agent and principal the Router verified, unless the issuer explicitly allows the adapter to exchange a derivative of the Bridge token bound to another key. In the first case the downstream identity provider relies on the adapter's statement and MUST trust the adapter for that purpose. In both cases the agent's key stays with the agent. Where the tool's access system supports it, the downstream credential MUST be bound to the component that presents it.
 
-##### RTR-30 Native-mode targets
+##### RTR-30 Egress mode
 
 *Core; L2-15*
 
-For a native-mode target that verifies ODIS credentials itself, no exchange is needed: the agent's Agent Runtime Credential and delegation MUST pass through to the target for verification.
+The Router MUST dispatch through the egress mode the Provider Adapter declares for the target (ODIS-L2-15), and MUST NOT fall back from bridge mode to forwarding the agent's credentials.
 
 ##### RTR-31 Credential reuse
 
 *Core; L2-11*
 
-A provider adapter MAY cache a downstream credential, but every call using it MUST have its own permit and fit both the credential's limits and that permit. The adapter MUST discard the credential when any authority it depends on is revoked, and MUST NOT reuse it beyond the shortest of its remaining lifetime, the target's declared maximum revocation latency, and the time until the next mandatory revocation check. If either of the last two is undeclared, reuse MUST be disabled. Reuse avoids another exchange, not another decision.
+Caching and invalidating derived credentials belong to the Cache and Revocation Manager ([§3.2](../ODIS.md#32-layer-2--the-bridge-delegation--access)). A cached credential MUST NOT stand in for a decision: every call using one MUST have its own permit and fit both the credential's limits and that permit.
 
 ##### RTR-32 Exchange audit linkage
 
@@ -416,7 +416,7 @@ The Router MAY receive signed revocation events, fetch signed revocation lists, 
 
 *Core; L3-04*
 
-The Router MUST check revocation (1) at token verification, rejecting a revoked caller before policy evaluation; (2) before obtaining a downstream credential and again as the final step before sending the call, because approval or other work may have delayed dispatch after the first check; and (3) before releasing a result, withholding it if authority was revoked. For a stream, the Router MUST check again at intervals no longer than the declared revocation delay, and MUST stop further release once authority is revoked or its revocation data is older than that delay (RTR-43). The tool action cannot be undone, and data already released cannot be recalled. No further check is needed after the call, but after-call obligations still run for actions already taken. The Router MUST discard cached downstream credentials derived from revoked authority.
+The Router MUST check revocation (1) at token verification, rejecting a revoked caller before policy evaluation; (2) before obtaining a downstream credential and again as the final step before sending the call, because approval or other work may have delayed dispatch after the first check; and (3) before releasing a result, withholding it if authority was revoked. For a stream, the Router MUST check again at intervals no longer than the declared revocation delay, and MUST stop further release once authority is revoked or its revocation data is older than that delay (RTR-43). The tool action cannot be undone, and data already released cannot be recalled. No further check is needed after the call, but after-call obligations still run for actions already taken.
 
 ##### RTR-43 Stale revocation data
 
