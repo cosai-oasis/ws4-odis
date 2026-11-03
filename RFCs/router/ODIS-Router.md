@@ -264,7 +264,7 @@ Only an enforceable permit allows dispatch. The Router MUST stop the call on any
 
 *Core; §6.4*
 
-When a denial includes guidance for the caller (`context`), such as requesting manager approval before retrying a payment, the Router MUST return that guidance without changing or authorizing the denied call. The Router MAY act on `advice` or ignore it; failure to process advice MUST NOT stop the call.
+When a denial includes guidance for the caller (`context`), such as requesting manager approval before retrying a payment, the Router MUST return it to the caller. Guidance does not authorize a later call; a retry is evaluated like any other. `advice` is nonbinding ([Section 3.4](#34-policy-response)); the Router MAY record or surface it, and MUST NOT let it stop or change a call.
 
 #### 2.1.6 Decision binding
 
