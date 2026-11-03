@@ -54,7 +54,7 @@ A Router sits on the path between an agent and the tools and services the agent 
 3. **Resolve:** determine the actual server, operation, and resources ([2.1.3](#213-target-resolution)).
 4. **Request a decision:** send the policy engine the required and declared inputs ([2.1.4](#214-policy-request)).
 5. **Validate the decision:** confirm the response belongs to this evaluation and is still fresh ([2.1.5](#215-decision-handling), [2.1.6](#216-decision-binding)).
-6. **Enforce:** meet any obligations, recheck revocation, apply a downstream credential, and dispatch the retained call, or stop ([2.1.7](#217-hand-off-to-the-provider-adapter), [2.1.9](#219-revocation), [2.2.1](#221-obligations)).
+6. **Enforce:** meet any obligations, recheck revocation, apply a downstream credential, and dispatch the evaluated call, or stop ([2.1.7](#217-hand-off-to-the-provider-adapter), [2.1.9](#219-revocation), [2.2.1](#221-obligations)).
 7. **Record:** write the decision record ([2.1.12](#2112-audit)). Where [RTR-64](#rtr-64-durable-record-before-irreversible-effects) applies, the component performing an irreversible effect commits an intent before that effect and records its outcome afterward.
 
 The Router verifies inputs and enforces outcomes; a policy engine applies organizational rules to Router-supplied inputs and decides. The Router and the policy engine may run together or separately. The Router's components may share a process or run separately, but the agent does not control them (RTR-01). Verification and target resolution use trusted keys, revocation data, routing configuration, and registry records rather than agent-supplied claims.
@@ -65,7 +65,7 @@ The Router's inputs arrive in three ways:
 
 - **With the request:** the signed Bridge token carries agent, principal, and authority facts. With trusted Bridge keys held locally, the Router need not contact the Passport, Bridge, or registry for each call.
 - **Ahead of time:** signed bundles can provide routing configuration, target facts, and Bridge keys. Revocation events and risk signals can be pushed into a local store. The Router then uses local lookups.
-- **At the Router:** rate-limit counters, retained calls under evaluation, and pending audit records require Router-controlled state.
+- **At the Router:** rate-limit counters, calls under evaluation, and pending audit records require Router-controlled state.
 
 ### 1.2 Trust inputs
 
@@ -121,6 +121,7 @@ The key words MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are to be interpreted 
 - **Required** ([2.1](#21-required)) applies to every Router at or above the requirement's profile, and to every deployment that uses one.
 - **Optional** ([2.2](#22-optional)) may be omitted. A Router or deployment that implements an optional capability MUST meet its requirements.
 - **Profile** is a provisional tag naming the lowest ODIS conformance profile ([ODIS §8.1](../ODIS.md#81-profile-definitions)) at which the requirement would apply when a Router handles a call. For an optional capability, it names the profile at which ODIS would expect the capability, or "no profile" if none.
+- Terms defined in the [Glossary](#glossary), notably *verified attribute*, *unverified input*, *evaluated call*, *cleared for dispatch*, and *enforceable permit*, carry those meanings in requirements.
 - Each requirement's heading is followed by its profile and **Ref**, which lists related ODIS requirements, without the `ODIS-` prefix ([ODIS §5](../ODIS.md#5-requirements)), and ODIS sections (§).
 
 ### 2.1 Required
@@ -301,7 +302,7 @@ Most tools require a credential issued for their own access system, such as an O
 
 *Core; L2-13, §7.2*
 
-The provider adapter MUST NOT issue or apply a downstream credential for a call until the call is cleared for dispatch: every required decision source has permitted it (RTR-44) and every before-dispatch obligation has been met (RTR-55). Each exchange MUST remain tied to that call. Exchanging earlier would leave a usable credential for a call that might be denied or later reused without evaluation.
+The provider adapter MUST NOT issue or apply a downstream credential for a call until the call is cleared for dispatch. Each exchange MUST remain tied to that call. Exchanging earlier would leave a usable credential for a call that might be denied or later reused without evaluation.
 
 ##### RTR-27 Credential custody
 
@@ -359,13 +360,13 @@ Destructive operations include actions such as deleting, paying, or sending when
 
 *Core; L3-03*
 
-Authority limits MUST use verified identities and resolved targets. The Router MUST check them before dispatch but count only permitted calls that were dispatched; counting refusals would let denied traffic exhaust an allowance. Where Router instances share a limit, the check MUST reserve units atomically in the shared counter, so two calls cannot both take the last unit. A reservation is released if the call is refused or fails before dispatch, and kept if dispatch succeeds or its outcome is unknown, such as after a timeout. If a rate-limit service checks and counts in one operation, the Router SHOULD consult it after the policy decision or account for that behavior when setting the limit. Most policy engines do not retain counters, so the Router MAY enforce configured limits itself, pass current totals to the policy engine, or consult a dedicated rate-limit service such as Limitador.
+Authority limits MUST use verified attributes. The Router MUST check them before dispatch but count only permitted calls that were dispatched; counting refusals would let denied traffic exhaust an allowance. Where Router instances share a limit, the check MUST reserve units atomically in the shared counter, so two calls cannot both take the last unit. A reservation is released if the call is refused or fails before dispatch, and kept if dispatch succeeds or its outcome is unknown, such as after a timeout. If a rate-limit service checks and counts in one operation, the Router SHOULD consult it after the policy decision or account for that behavior when setting the limit. Most policy engines do not retain counters, so the Router MAY enforce configured limits itself, pass current totals to the policy engine, or consult a dedicated rate-limit service such as Limitador.
 
 ##### RTR-36 Count keys
 
 *Core; L3-03*
 
-An authority limit MUST be keyed by one or more of the keys in Table 1. Each key MUST come from a verified token, resolved target, or Router record, never an agent-chosen identifier, and aliases for the same tool MUST share a count. A deployment MAY combine keys, such as payments per delegation or total amount per principal; a call MUST satisfy every applicable limit.
+An authority limit MUST be keyed by one or more of the keys in Table 1. Each key MUST be a verified attribute, and aliases for the same tool MUST share a count. A deployment MAY combine keys, such as payments per delegation or total amount per principal; a call MUST satisfy every applicable limit.
 
 ##### RTR-37 Counter state
 
@@ -530,7 +531,7 @@ Obligation support is optional. A Router without it denies any permit carrying a
 
 *no profile; L2-02*
 
-The Router MUST hold the call until the condition is met. For approval, it MAY wait or return a pending status for a later retry. An approval MUST be bound to the exact retained call and resolved target; it MUST NOT authorize, for example, a larger payment or another invoice. An approval does not extend the decision's validity: if the decision has expired, the Router MUST obtain a fresh decision before dispatch, with the approval presented as met, and repeat its current-state checks, including revocation (RTR-42).
+The Router MUST hold the call until the condition is met. For approval, it MAY wait or return a pending status for a later retry. An approval MUST be bound to the exact evaluated call; it MUST NOT authorize, for example, a larger payment or another invoice. An approval does not extend the decision's validity: if the decision has expired, the Router MUST obtain a fresh decision before dispatch, with the approval presented as met, and repeat its current-state checks, including revocation (RTR-42).
 
 ##### RTR-56 Before result release
 
@@ -873,7 +874,7 @@ References identify the affected requirements or ODIS issues.
 
 **Agent.** Software that uses an AI model to call tools and services on a principal's behalf.
 
-**Authority limit.** A cap on delegated activity, such as payments per hour, counted against verified identifiers or resolved targets. Compare load protection.
+**Authority limit.** A cap on delegated activity, such as payments per hour, counted against verified attributes. Compare load protection.
 
 **Bridge.** The ODIS layer that records who an agent acts for and what authority it holds, and carries that authority to downstream systems.
 
@@ -882,6 +883,8 @@ References identify the affected requirements or ODIS issues.
 **Bridge token.** The signed token a Bridge issues naming the principal, task, and authority and carrying the credential issuer's results the Router needs, bound to the same private key as the Agent Runtime Credential (RTR-07).
 
 **Claim.** A statement in a token, such as an agent identity or permission.
+
+**Cleared for dispatch.** An evaluated call that every required decision source has permitted (RTR-44) and whose before-dispatch obligations are met (RTR-55).
 
 **Decision identifier.** The Router's unique `evaluation_id` for one policy evaluation, echoed in its response.
 
@@ -892,6 +895,10 @@ References identify the affected requirements or ODIS issues.
 **Dispatch.** Sending the evaluated call to the tool. Nothing reaches the tool before dispatch.
 
 **Downstream credential.** A credential accepted by a tool, obtained or applied after a permit and never given to the agent.
+
+**Enforceable permit.** A `permit` that matches the pending evaluation, is within its validity period and unused, and carries only obligations the Router supports and can meet.
+
+**Evaluated call.** The call as the Router received and retained it, from which the policy request is derived and which dispatch must match: operation, arguments, resolved target, and route.
 
 **Gateway.** A component that offers tools from several servers under its own names. The Router often runs within it.
 
@@ -934,5 +941,9 @@ References identify the affected requirements or ODIS issues.
 **Trace identifier.** An identifier that follows a request across every component that handles it, used to join their logs. It does not distinguish separate decisions about the same request.
 
 **Trust domain.** Systems under one administrative authority that trust the same issuers, often but not always one organization.
+
+**Unverified input.** A value the Router passes to the policy engine without having established it, such as an agent's declared purpose or a tool's self-description, marked so the engine can weigh it.
+
+**Verified attribute.** A value the Router takes from a verified Bridge token, the resolved target, or its own records, never from the agent's request.
 
 **Verify.** Check a token's trusted issuer, expiry, revocation status, and proof that the presenter holds its bound key.
