@@ -224,7 +224,7 @@ The Router MUST deny a call if it cannot resolve the name, server, or affected r
 
 *Core; §6.4*
 
-Policies may use a target's owner, data sensitivity, or storage location. Each attribute MUST record its source and verification status, and SHOULD record its observation time and validity period. Registry attributes from a trusted source are verified. A tool's self-description, such as a read-only label, remains unverified; the Router MAY pass it to the policy engine with that status.
+Policies may use a target's owner, data sensitivity, or storage location. Each attribute MUST record its source and verification status, and SHOULD record its observation time and validity period. Registry attributes from a trusted source are verified. A tool's self-description, such as a read-only label, counts as verified only where the deployment trusts the tool's provider (RTR-34); otherwise the Router MAY pass it to the policy engine as an unverified input.
 
 #### 2.1.4 Policy request
 
@@ -354,7 +354,7 @@ Each limit MUST define what is counted, over what period, and which key shares t
 
 *Core; L3-03*
 
-Destructive operations include actions such as deleting, paying, or sending when the effect is hard to undo. Their classification MUST come from trusted target information, such as a registry, rather than a tool's self-description; an incorrect read-only label MUST NOT evade a destructive-operation limit.
+Destructive operations include actions such as deleting, paying, or sending when the effect is hard to undo. Their classification MAY come from the tool's own declaration where the deployment trusts the tool's provider, and a deployment-configured mapping MUST take precedence over it. An operation with no classification from a trusted source MUST be treated as destructive.
 
 ##### RTR-35 Counting
 
