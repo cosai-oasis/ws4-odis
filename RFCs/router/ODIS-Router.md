@@ -348,7 +348,7 @@ Rate limits depend on activity across calls. Authority limits cap the use of del
 
 *Core; L3-03*
 
-Each limit MUST define what is counted, over what period, and which key shares the count (Table 1). A limit may count all calls, a class of operations such as payments, or a quantity such as the total amount paid, over a window such as a minute, hour, or day. A deployment MAY apply several windows to the same count, such as per minute and per day, so a burst within a long window is also bounded.
+Each limit MUST define what is counted, over what period, and which key shares the count ([Section 3.7](#37-authority-limit-keys)). A limit may count all calls, a class of operations such as payments, or a quantity such as the total amount paid, over a window such as a minute, hour, or day. A deployment MAY apply several windows to the same count, such as per minute and per day, so a burst within a long window is also bounded.
 
 ##### RTR-34 Destructive classification
 
@@ -366,7 +366,7 @@ Authority limits MUST use verified attributes. The Router enforces them before d
 
 *Core; L3-03*
 
-An authority limit MUST be keyed by one or more of the keys in Table 1. Each key MUST be a verified attribute, and aliases for the same tool MUST share a count. A deployment MAY combine keys, such as payments per delegation or total amount per principal; a call MUST satisfy every applicable limit.
+An authority limit MUST be keyed by one or more of the keys in [Section 3.7](#37-authority-limit-keys). Each key MUST be a verified attribute, and aliases for the same tool MUST share a count. A deployment MAY combine keys, such as payments per delegation or total amount per principal; a call MUST satisfy every applicable limit.
 
 ##### RTR-37 Counter state
 
@@ -379,17 +379,6 @@ Router instances enforcing the same limit MUST share counters, and counts MUST s
 *Core; L3-03*
 
 Repeated breaches of an authority limit MAY lead a deployment to block the offending delegation or agent ([RTR-63](#rtr-63-router-initiated-revocation)). Breaches of load-protection limits (RTR-61), where used, MUST NOT, since their keys are not verified.
-
-**Table 1. Authority-limit keys**
-
-| Key | Scope and constraint |
-|---|---|
-| Agent | One agent; sub-agents receive separate allowances. |
-| Original delegation | All work under a grant, including sub-agents; the Bridge token carries this identifier so fan-out cannot multiply the limit. |
-| Principal | Work done for one person or service across agents. |
-| Task | One task; sub-agents may have different task IDs, so the original delegation is more reliable for shared work. |
-| Session | One run of activity, once ODIS defines sessions. |
-| Tool or operation | The resolved target, shared by all aliases for it. |
 
 #### 2.1.9 Revocation
 
@@ -405,7 +394,7 @@ Routine changes, such as approving new software or changing role permissions, MA
 
 *Core; L3-04, L3-05*
 
-The Router MUST take the action in Table 2 for each revocation level. Agent-level revocation is the ODIS kill switch. Session-level revocation depends on the still-open definition and identification of an agent session.
+The Router MUST take the action in [Section 3.8](#38-revocation-levels) for each revocation level. Agent-level revocation is the ODIS kill switch. Session-level revocation depends on the still-open definition and identification of an agent session.
 
 ##### RTR-41 Revocation sources
 
@@ -424,16 +413,6 @@ The Router MUST check revocation (1) at token verification, rejecting a revoked 
 *Core; L3-04*
 
 If current revocation data is unavailable, the Router MAY rely on cached data only within the declared delay. Once it is older, the Router MUST stop accepting affected tokens until the data is refreshed (RTR-49).
-
-**Table 2. Revocation levels**
-
-| Level | Scope and Router action |
-|---|---|
-| Decision | Cancel one permit before dispatch; a retry requires a new decision. |
-| Token or delegation | Reject later calls under that grant and discard derived downstream credentials. |
-| Session | Reject later calls in that session. |
-| Agent | Reject the agent's tokens across all tasks and sessions, including derived credentials. |
-| Principal | Reject tokens naming the principal across all agents acting for them. |
 
 #### 2.1.10 Composition and coverage
 
@@ -475,19 +454,7 @@ Deployments MAY reduce live dependencies by supplying inputs before they are nee
 
 *Core*
 
-When a dependency is unavailable, the Router MUST behave as in Table 3. Deployments needing continued service MUST make the relevant dependency as available as the Router, for example by running the policy engine locally, pushing revocation data, or delivering configuration ahead of time. An in-process policy engine also removes the need to authenticate and protect messages over a Router-to-engine network connection (RTR-25).
-
-**Table 3. Dependency behavior**
-
-| Dependency | Delivery | If unavailable |
-|---|---|---|
-| Trusted Bridge keys | Locally held and refreshed | Reject tokens whose signing keys cannot be confirmed. |
-| Revocation data | Pushed events or fetched lists | Stop affected calls once cached data exceeds the declared delay. |
-| Routing and target facts | Signed bundles | Use the last valid configuration until it expires; deny calls that cannot be resolved. |
-| Policy engine | Local or separate service | Stop calls; no decision can be made. |
-| Rate-limit counters | State shared by Router instances | Stop calls subject to authority limits. |
-| Downstream credential issuer | Identity provider reached by the adapter | Stop calls needing a new credential; reuse a cached one only within its limits and after a separate permit. |
-| Audit store | Local buffer or central store | Follow the deployment's declared rule: stop calls or report a recording gap (RTR-53). |
+When a dependency is unavailable, the Router MUST behave as in [Section 3.9](#39-dependency-behavior). Deployments needing continued service MUST make the relevant dependency as available as the Router, for example by running the policy engine locally, pushing revocation data, or delivering configuration ahead of time. An in-process policy engine also removes the need to authenticate and protect messages over a Router-to-engine network connection (RTR-25).
 
 #### 2.1.12 Audit
 
@@ -605,7 +572,7 @@ Deployments needing strong assurance MUST make later alteration or deletion of r
 
 A deployment MAY configure the Router to set an argument from a verified attribute, overriding any value the agent supplied, such as a tool's `on_behalf_of` from the verified principal, or to normalize an argument to the tool's declared schema by a declared, deterministic rule. Binding MUST run before evaluation, so the policy request and dispatch both use the bound call, MUST NOT change the operation or add arguments other than bound ones, and MUST be recorded in the decision record. Selecting the service or instance that handles the call is target resolution (RTR-12, RTR-13), not binding.
 
-## 3. Schema definitions
+## 3. Schemas and reference tables
 
 Field names are provisional.
 
@@ -722,6 +689,39 @@ One per decision (RTR-50). Each includes the following. If the Router denies bef
 - obligations and whether each was met;
 - whether the call was dispatched and, if not, where it stopped; and
 - a reference to any downstream credential used, never the credential itself.
+
+### 3.7 Authority-limit keys
+
+| Key | Scope and constraint |
+|---|---|
+| Agent | One agent; sub-agents receive separate allowances. |
+| Original delegation | All work under a grant, including sub-agents; the Bridge token carries this identifier so fan-out cannot multiply the limit. |
+| Principal | Work done for one person or service across agents. |
+| Task | One task; sub-agents may have different task IDs, so the original delegation is more reliable for shared work. |
+| Session | One run of activity, once ODIS defines sessions. |
+| Tool or operation | The resolved target, shared by all aliases for it. |
+
+### 3.8 Revocation levels
+
+| Level | Scope and Router action |
+|---|---|
+| Decision | Cancel one permit before dispatch; a retry requires a new decision. |
+| Token or delegation | Reject later calls under that grant and discard derived downstream credentials. |
+| Session | Reject later calls in that session. |
+| Agent | Reject the agent's tokens across all tasks and sessions, including derived credentials. |
+| Principal | Reject tokens naming the principal across all agents acting for them. |
+
+### 3.9 Dependency behavior
+
+| Dependency | Delivery | If unavailable |
+|---|---|---|
+| Trusted Bridge keys | Locally held and refreshed | Reject tokens whose signing keys cannot be confirmed. |
+| Revocation data | Pushed events or fetched lists | Stop affected calls once cached data exceeds the declared delay. |
+| Routing and target facts | Signed bundles | Use the last valid configuration until it expires; deny calls that cannot be resolved. |
+| Policy engine | Local or separate service | Stop calls; no decision can be made. |
+| Rate-limit counters | State shared by Router instances | Stop calls subject to authority limits. |
+| Downstream credential issuer | Identity provider reached by the adapter | Stop calls needing a new credential; reuse a cached one only within its limits and after a separate permit. |
+| Audit store | Local buffer or central store | Follow the deployment's declared rule: stop calls or report a recording gap (RTR-53). |
 
 ## 4. Examples
 
@@ -862,7 +862,7 @@ A permit for the USD 250 payment, requiring removal of the bank account field an
 References identify the affected requirements or ODIS issues.
 
 - **Result governance:** The Router can enforce conditions on a result before releasing it, such as removing a field (RTR-56), but ODIS has not yet defined general result governance. An authorized call can return excessive data or instructions intended to redirect the agent. Deciding which results require inspection, and how, overlaps with content inspection. Should the Router's responsibilities extend to results generally?
-- **Sessions:** Sessions are referred to where they matter but are not yet defined by ODIS. What defines a session, how is it identified for limits, revocation, and audit, and what does terminating one involve (L3-04)? (Table 1, Table 2, RTR-50; #25)
+- **Sessions:** Sessions are referred to where they matter but are not yet defined by ODIS. What defines a session, how is it identified for limits, revocation, and audit, and what does terminating one involve (L3-04)? ([Section 3.7](#37-authority-limit-keys), [Section 3.8](#38-revocation-levels), RTR-50; #25)
 - **Client application identity:** A coding assistant or similar application may sign in separately from the agent and principal. Should its identity appear in the policy request, marked unverified until ODIS defines a check? (Section 3.1; #13)
 - **Sandbox identity:** Should a sandbox and the agents or sub-agents it hosts have separate identities? Which identity does the Router verify? (RTR-04)
 - **Default arguments:** Should a minimum set of call arguments always reach the policy engine, rather than only those declared by a policy? (RTR-18)
