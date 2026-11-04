@@ -63,7 +63,7 @@ Most tools do not understand ODIS tokens. ODIS assigns credential translation to
 
 The Router's inputs arrive in three ways:
 
-- **With the request:** the signed Bridge token carries agent, principal, and authority facts. With trusted Bridge keys held locally, the Router need not contact the Passport, Bridge, or registry for each call.
+- **With the request:** each call carries the signed Bridge token with agent, principal, and authority facts, and a call without one is refused (RTR-03). Carrying it does not let the agent misuse it: the token is signed, bound to the agent's key (RTR-05), and presented by the authorized presenter (ODIS-L2-13). With trusted Bridge keys held locally, the Router need not contact the Passport, Bridge, or registry for each call.
 - **Ahead of time:** signed bundles can provide routing configuration, target facts, and Bridge keys. Revocation events and risk signals can be pushed into a local store. The Router then uses local lookups.
 - **At the Router:** rate-limit counters, calls under evaluation, and pending audit records require Router-controlled state.
 
