@@ -67,11 +67,11 @@ The Router's inputs arrive in three ways:
 
 ### 1.2 Trust inputs
 
-Raw evidence about the agent, such as a software-image signature or platform statement, is appraised before an Agent Runtime Credential is issued. The Router receives the Bridge's signed account of the credential issuer's results, not the raw evidence.
+The Router never sees raw attestation evidence, only the Bridge's signed account of the credential issuer's results.
 
 The Bridge records authority granted by an entitled party, such as a principal or administrator. Principal, task, and permissions are grant decisions rather than facts established by technical evidence. The Router relies on the Bridge's signed claims about them.
 
-The Bridge carries the credential issuer's results into a Bridge token and signs it. The Router verifies the Bridge token rather than parsing the Agent Runtime Credential. The token is bound to the same agent-held private key as that credential, preventing use of a copied token by another holder. Each layer therefore depends on the adjacent layer's interface. A Router need only support Bridge tokens, though its trust depends on the Bridges it accepts. A careless credential issuer, over-permissive Bridge, or compromised policy engine can still cause incorrect decisions that the Router cannot detect.
+The Router verifies a Bridge token rather than the Agent Runtime Credential itself. ODIS defines the credential ([§6.2](../ODIS.md#62-agent-runtime-credential-descriptor)) and the Passport RFC the Bridge token (BRG-14). A Router need only support Bridge tokens, though its trust depends on the Bridges it accepts. A careless credential issuer, over-permissive Bridge, or compromised policy engine can still cause incorrect decisions that the Router cannot detect.
 
 The agent chooses the requested tool, operation, and arguments. The Router treats these as inputs to evaluate, retains the request, and forwards only the request that was evaluated. Other inputs, such as a self-reported model, a tool's read-only description, or a risk signal with an unconfirmed source, can be useful but are marked unverified for the policy engine (RTR-16).
 
@@ -882,7 +882,7 @@ References identify the affected requirements or ODIS issues.
 
 **Binding.** Protocol-specific rules that map calls to policy actions and resources and identify arguments relevant to a decision.
 
-**Bridge token.** The signed token a Bridge issues naming the principal, task, and authority and carrying the credential issuer's results the Router needs, bound to the same private key as the Agent Runtime Credential (RTR-07).
+**Bridge token.** The Bridge's signed token for the Router, defined in the Passport RFC (BRG-14).
 
 **Claim.** A statement in a token, such as an agent identity or permission.
 
@@ -914,7 +914,7 @@ References identify the affected requirements or ODIS issues.
 
 **Obligation.** A condition attached to a permit, with a stage at which it must be met, such as approval before dispatch.
 
-**Agent Runtime Credential.** The short-lived credential bound to one running agent instance ([ODIS §6.2](../ODIS.md#62-agent-runtime-credential-descriptor)), issued by the Passport or, as PR #40 proposes, by a Verifier in the Bridge.
+**Agent Runtime Credential.** Defined in [ODIS §6.2](../ODIS.md#62-agent-runtime-credential-descriptor).
 
 **Passport.** The ODIS layer that establishes an agent's software and running instance.
 
