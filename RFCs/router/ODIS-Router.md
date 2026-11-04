@@ -53,13 +53,13 @@ A Router sits on the path between an agent and the tools and services the agent 
 2. **Verify:** check the Bridge token and proof of possession ([2.1.2](#212-caller-verification)).
 3. **Resolve:** determine the actual server, operation, and resources ([2.1.3](#213-target-resolution)).
 4. **Request a decision:** send the policy engine the required and declared inputs ([2.1.4](#214-policy-request)).
-5. **Validate the decision:** confirm the response belongs to this evaluation and is still fresh ([2.1.5](#215-decision-handling), [2.1.6](#216-decision-binding)).
-6. **Enforce:** meet any obligations, recheck revocation, apply a downstream credential, and dispatch the evaluated call, or stop ([2.1.7](#217-hand-off-to-the-provider-adapter), [2.1.9](#219-revocation), [2.2.1](#221-obligations)).
-7. **Record:** write the decision record ([2.1.12](#2112-audit)). Where [RTR-64](#rtr-64-durable-record-before-irreversible-effects) applies, the component performing an irreversible effect commits an intent before that effect and records its outcome afterward.
+5. **Validate the decision:** confirm the response belongs to this evaluation and is still fresh ([2.1.5](#215-decisions)).
+6. **Enforce:** meet any obligations, recheck revocation, apply a downstream credential, and dispatch the evaluated call, or stop ([2.1.6](#216-hand-off-to-the-provider-adapter), [2.1.8](#218-revocation), [2.2.1](#221-obligations)).
+7. **Record:** write the decision record ([2.1.11](#2111-audit)). Where [RTR-64](#rtr-64-durable-record-before-irreversible-effects) applies, the component performing an irreversible effect commits an intent before that effect and records its outcome afterward.
 
 The Router verifies inputs and enforces outcomes; a policy engine applies organizational rules to Router-supplied inputs and decides. The Router and the policy engine may run together or separately. The Router's components may share a process or run separately, but the agent does not control them (RTR-01). Verification and target resolution use trusted keys, revocation data, routing configuration, and registry records rather than agent-supplied claims.
 
-Most tools do not understand ODIS tokens. ODIS assigns credential translation to Layer 2 ([§3.2](../ODIS.md#32-layer-2--the-bridge-delegation--access)): a Provider Adapter conveys ODIS credentials to a native-mode target or obtains a target-native credential in bridge mode (ODIS-L2-15), and a Cache and Revocation Manager holds derived credentials and invalidates them on revocation. The Router does not take on that role; it decides, and only then lets the adapter act ([2.1.7](#217-hand-off-to-the-provider-adapter)). The adapter may run in the same gateway as the Router, be called by it, or sit later in the path.
+Most tools do not understand ODIS tokens. ODIS assigns credential translation to Layer 2 ([§3.2](../ODIS.md#32-layer-2--the-bridge-delegation--access)): a Provider Adapter conveys ODIS credentials to a native-mode target or obtains a target-native credential in bridge mode (ODIS-L2-15), and a Cache and Revocation Manager holds derived credentials and invalidates them on revocation. The Router does not take on that role; it decides, and only then lets the adapter act ([2.1.6](#216-hand-off-to-the-provider-adapter)). The adapter may run in the same gateway as the Router, be called by it, or sit later in the path.
 
 The Router's inputs arrive in three ways:
 
@@ -90,7 +90,7 @@ The agent chooses the requested tool, operation, and arguments. The Router treat
 
 ### 1.3 Placement
 
-A Router may run beside an agent, in a gateway, or in front of a tool. A deployment may use several Routers on one path, and each Router may consult several decision sources ([2.1.10](#2110-composition-and-coverage)). Placement depends on:
+A Router may run beside an agent, in a gateway, or in front of a tool. A deployment may use several Routers on one path, and each Router may consult several decision sources ([2.1.9](#219-composition-and-coverage)). Placement depends on:
 
 - **Isolation:** nothing the model controls may reach the Router's code, configuration, keys, or the downstream credentials it uses (RTR-01). A separate protected component beside the agent can satisfy this.
 - **Visibility:** a Router can enforce only rules for which it sees the needed facts.
@@ -246,7 +246,9 @@ A deployment MUST publish a policy input declaration ([Section 3.3](#33-policy-i
 
 The Router MUST include the required fields and only the optional inputs needed for the decision, as named in the engine's policy input declaration. Arguments, the delegation chain, the task description, and the software digest may contain sensitive information and MUST be sent only when declared. Raw credentials, private keys, and secrets MUST NOT be sent. If a required input is unavailable or cannot meet its declared verification level, the Router MUST deny the call.
 
-#### 2.1.5 Decision handling
+#### 2.1.5 Decisions
+
+The Router acts on a policy decision only for the call evaluated and while that decision remains valid.
 
 ##### RTR-19 Decision outcomes
 
@@ -265,10 +267,6 @@ Only an enforceable permit allows dispatch. The Router MUST stop the call on any
 *Core; §6.4*
 
 When a denial includes guidance for the caller (`context`), such as requesting manager approval before retrying a payment, the Router MUST return it to the caller. Guidance does not authorize a later call; a retry is evaluated like any other. `advice` is nonbinding ([Section 3.4](#34-policy-response)); the Router MAY record or surface it, and MUST NOT let it stop or change a call.
-
-#### 2.1.6 Decision binding
-
-The Router acts on a policy decision only for the call evaluated and while that decision remains valid.
 
 ##### RTR-22 Evaluation identifiers
 
@@ -294,7 +292,7 @@ A permit MUST authorize at most one dispatch, and only within its validity perio
 
 When the policy engine runs as a separate service, the Router and the engine MUST authenticate each other and protect the integrity of the request and response in transit between them. An in-process engine shares the Router's trust boundary.
 
-#### 2.1.7 Hand-off to the Provider Adapter
+#### 2.1.6 Hand-off to the Provider Adapter
 
 Most tools require a credential issued for their own access system, such as an OAuth token, cloud role, or API key, rather than an ODIS token. These requirements cover when the Provider Adapter may act for a call and what the Router requires of it. The adapter's own behaviour is specified by ODIS-L2-08, L2-10 and L2-15.
 
@@ -340,7 +338,7 @@ Caching and invalidating derived credentials belong to the Cache and Revocation 
 
 The Provider Adapter MUST record each exchange with the call's `evaluation_id`, so it links to the decision record (RTR-52, [Section 3.6](#36-decision-record)).
 
-#### 2.1.8 Authority limits
+#### 2.1.7 Authority limits
 
 Rate limits depend on activity across calls. Authority limits cap the use of delegated authority; load protection ([RTR-61](#rtr-61-load-protection)) is separate.
 
@@ -380,7 +378,7 @@ Router instances enforcing the same limit MUST share counters, and counts MUST s
 
 Repeated breaches of an authority limit MAY lead a deployment to block the offending delegation or agent ([RTR-63](#rtr-63-router-initiated-revocation)). Breaches of load-protection limits (RTR-61), where used, MUST NOT, since their keys are not verified.
 
-#### 2.1.9 Revocation
+#### 2.1.8 Revocation
 
 Revocation ends trust before a token expires. It may stop one decision, a delegation, a session, an agent, or activity on a principal's behalf.
 
@@ -414,7 +412,7 @@ The Router MUST check revocation (1) at token verification, rejecting a revoked 
 
 If current revocation data is unavailable, the Router MAY rely on cached data only within the declared delay. Once it is older, the Router MUST stop accepting affected tokens until the data is refreshed (RTR-49).
 
-#### 2.1.10 Composition and coverage
+#### 2.1.9 Composition and coverage
 
 ##### RTR-44 Decision sources
 
@@ -440,7 +438,7 @@ The deployment MUST identify which policies each Router enforces and ensure each
 
 If host operators may disable controls on the agent's machine, every protected path to a tool MUST cross a Router they cannot modify. That independently administered Router MUST enforce every rule that has to survive host compromise, including authority limits, revocation, and limits on destructive operations. Local file and shell tools may have no network path through such a Router; a deployment requiring this protection MUST route those calls through an independent Router or explicitly exclude them from its coverage claim. A local Router MAY still enforce additional agent-specific rules.
 
-#### 2.1.11 Dependencies
+#### 2.1.10 Dependencies
 
 The Router needs trusted keys, revocation data, routing information, policy decisions, and state to handle a call.
 
@@ -456,7 +454,7 @@ Deployments MAY reduce live dependencies by supplying inputs before they are nee
 
 When a dependency is unavailable, the Router MUST behave as in [Section 3.9](#39-dependency-behavior). Deployments needing continued service MUST make the relevant dependency as available as the Router, for example by running the policy engine locally, pushing revocation data, or delivering configuration ahead of time. An in-process policy engine also removes the need to authenticate and protect messages over a Router-to-engine network connection (RTR-25).
 
-#### 2.1.12 Audit
+#### 2.1.11 Audit
 
 ##### RTR-50 Decision records
 
