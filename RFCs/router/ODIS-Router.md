@@ -1,7 +1,5 @@
 # The ODIS Router
 
-*Status: draft proposal for discussion. This document is not part of the ODIS specification.*
-
 ## Summary
 
 ODIS divides agent access across three layers. The [Passport](../ODIS.md#31-layer-1--the-passport-identity--attestation) establishes the agent's software and running instance, from which a short-lived Agent Runtime Credential bound to that instance is issued; the [Bridge](../ODIS.md#32-layer-2--the-bridge-delegation--access) records who the agent acts for and what authority it holds, and carries that authority to downstream systems; the [Router](../ODIS.md#33-layer-3--the-router-discovery--governance) governs discovery of, and calls to, tools and services. This document specifies how the Router evaluates and enforces each call.
