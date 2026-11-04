@@ -314,7 +314,7 @@ A downstream credential for a permitted call MUST stay with the Provider Adapter
 
 *Core; L2-10*
 
-The Bridge token covers the agent's task; a policy decision covers one call. As far as the tool's access system allows, the downstream credential MUST be limited to the target tool, the operation's required permissions, and a short lifetime. If the tool cannot express limits that narrow, the Router or adapter MUST retain the broader credential and use it only for the evaluated call.
+The downstream credential SHOULD be as narrow as the tool's access system allows: the target tool, the operation's required permissions, and a short lifetime. Where it is still broader than the evaluated call, the Provider Adapter MUST use it only for that call (ODIS-L2-10).
 
 ##### RTR-29 Key-bound Bridge tokens
 
