@@ -88,7 +88,7 @@ The agent chooses the requested tool, operation, and arguments. The Router treat
 
 ### 1.3 Placement
 
-A Router can run beside an agent, in a gateway, or in front of a tool. A deployment can use several Routers on one path, and each Router can consult several decision sources ([2.1.9](#219-composition-and-coverage)). Placement depends on:
+Wherever it runs, a Router sits between the model's instructions and the agent's actions: every governed action passes through it. A Router can run beside an agent, in a gateway, or in front of a tool. A deployment can use several Routers on one path, and each Router can consult several decision sources ([2.1.9](#219-composition-and-coverage)). Placement depends on:
 
 - **Isolation:** nothing the model controls can reach the Router's code, configuration, keys, or the downstream credentials it uses (RTR-01). A separate protected component beside the agent can satisfy this.
 - **Visibility:** a Router can enforce only rules for which it sees the needed facts.
