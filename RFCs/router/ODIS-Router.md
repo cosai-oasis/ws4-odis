@@ -274,7 +274,7 @@ The Router acts on a policy decision only for the call evaluated and while that 
 
 *Core; CC-01, §6.4*
 
-The Router MUST assign each policy request a unique `evaluation_id`. The policy engine MUST copy it into the response, and the Router MUST accept the response only for the matching pending evaluation. `request_trace_id` correlates logs across components and MUST NOT be used to identify a decision, because one request may produce several evaluations, for example after a retry or at multiple Routers.
+The Router MUST assign each policy request an `evaluation_id` that identifies that decision and is unique across every Router whose records may be correlated. The policy engine MUST copy it into the response, and the Router MUST accept the response only for the matching pending evaluation. `request_trace_id` only correlates records: one request can produce several evaluations, for example after a retry or at several Routers, so it MUST NOT identify a decision.
 
 ##### RTR-23 Evaluated call
 
@@ -286,7 +286,7 @@ The Router MUST retain the incoming call unchanged as the evaluated call, apart 
 
 *Core; L2-13*
 
-The Router MUST act on a response only within its `issued_at` to `expires_at` interval and at most once; an expired or previously used response MUST NOT authorize dispatch. The Router MUST still perform current-state checks, including revocation, before sending the call; a short decision lifetime does not replace those checks. The Router MUST verify and decide every invocation independently, whether or not the tool appeared in a discovery list: discovery is not an authorization decision for later calls, and an agent may remember or guess a hidden tool name.
+A permit MUST authorize at most one dispatch, and only within its validity period ([Section 3.4](#34-policy-response)). Revocation is still checked before dispatch (RTR-42); a short decision lifetime does not replace that check.
 
 ##### RTR-25 External policy engines
 
@@ -553,7 +553,7 @@ Tool lists shape what an agent may attempt and reveal what a deployment offers. 
 
 *Extended; L3-01*
 
-The Router MUST verify the caller's token before answering a list request and MUST record the request, so invalid callers receive no tool inventory and requests remain attributable. Before release, the Router MUST filter the list to tools the agent could plausibly use, using verified Bridge authority, the tools permitted in the agent's registration, and each tool's resolved identity, which reduces fruitless attempts and disclosure of the tool inventory; aliases for the same tool MUST receive the same treatment. Filtering is necessarily coarse: a later decision may depend on arguments, such as a payment amount, that are absent from the list request, so a listed tool may still be denied when called (RTR-24).
+The Router MUST verify the caller's token before answering a list request and MUST record the request, so invalid callers receive no tool inventory and requests remain attributable. Before release, the Router MUST filter the list to tools the agent could plausibly use, using verified Bridge authority, the tools permitted in the agent's registration, and each tool's resolved identity, which reduces fruitless attempts and disclosure of the tool inventory; aliases for the same tool MUST receive the same treatment. Filtering is necessarily coarse: a later decision may depend on arguments, such as a payment amount, that are absent from the list request, so a listed tool may still be denied when called. Filtering a discovery list is not enforcement: a call to a tool the agent was not shown is evaluated like any other.
 
 ##### RTR-59 Tool descriptions
 
@@ -870,7 +870,7 @@ References identify the affected requirements or ODIS issues.
 - **Common obligations:** Should ODIS define common obligation types with fixed handling for approval, field removal, and notification, while leaving their details to deployments? This could make policies portable without standardizing a full vocabulary. ODIS does not currently define a standard list. (RTR-54)
 - **Policy-engine chaining:** The Router stops on a final `not_applicable` response. Is it acceptable for deployments to finish chaining engines before returning one response to the Router? (RTR-19)
 - **Decisions across Routers:** May one Router pass a signed decision to another instead of each deciding independently? How would the decision be protected and bound to the call? (RTR-45)
-- **Evaluation coverage:** Must every call pass through a Router? Within a Router every call is decided (RTR-24), but no current ODIS profile requires a Router on every path: L3-02 is a SHOULD in Extended. (#23)
+- **Evaluation coverage:** Must every call pass through a Router? Within a Router every call is decided (RTR-20), but no current ODIS profile requires a Router on every path: L3-02 is a SHOULD in Extended. (#23)
 - **Credential issuer:** Does the Passport (PR #39) or a Verifier in the Bridge (PR #40) appraise evidence against the registration record and issue the Agent Runtime Credential? The Router input is unchanged either way. (RTR-07, RTR-08; #33)
 - **Profile tags:** The profile tags in Section 2 are provisional. Which requirements belong in Core, Extended, and Safety?
 
