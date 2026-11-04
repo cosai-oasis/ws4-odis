@@ -360,7 +360,7 @@ Destructive operations include actions such as deleting, paying, or sending when
 
 *Core; L3-03*
 
-Authority limits MUST use verified attributes. The Router MUST check them before dispatch but count only permitted calls that were dispatched; counting refusals would let denied traffic exhaust an allowance. Where Router instances share a limit, the check MUST reserve units atomically in the shared counter, so two calls cannot both take the last unit. A reservation is released if the call is refused or fails before dispatch, and kept if dispatch succeeds or its outcome is unknown, such as after a timeout. If a rate-limit service checks and counts in one operation, the Router SHOULD consult it after the policy decision or account for that behavior when setting the limit. Most policy engines do not retain counters, so the Router MAY enforce configured limits itself, pass current totals to the policy engine, or consult a dedicated rate-limit service such as Limitador.
+Authority limits MUST use verified attributes. The Router enforces them before dispatch and counts only calls it dispatches: a refusal MUST NOT consume an allowance, though a deployment MAY count refusals separately (RTR-38). Checking a limit and taking a unit MUST be one atomic step, so concurrent calls cannot together exceed a limit shared across Router instances (RTR-37). The Router MAY keep the counters itself or use a rate-limit service, and MAY pass current totals to the policy engine as inputs.
 
 ##### RTR-36 Count keys
 
