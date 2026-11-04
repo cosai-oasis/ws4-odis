@@ -292,7 +292,7 @@ A permit MUST authorize at most one dispatch, and only within its validity perio
 
 *Core; L3-06*
 
-When the policy engine runs as a separate service, the Router and the engine MUST authenticate each other and protect the request and response against modification. Mutually authenticated TLS is one option; verified HTTP Message Signatures are another and can preserve a signed decision as evidence. An in-process engine shares the Router's trust boundary.
+When the policy engine runs as a separate service, the Router and the engine MUST authenticate each other and protect the integrity of the request and response in transit between them. An in-process engine shares the Router's trust boundary.
 
 #### 2.1.7 Hand-off to the Provider Adapter
 
