@@ -302,7 +302,7 @@ Most tools require a credential issued for their own access system, such as an O
 
 *Core; L2-13, §7.2*
 
-The provider adapter MUST NOT issue or apply a downstream credential for a call until the call is cleared for dispatch. Each exchange MUST remain tied to that call. Exchanging earlier would leave a usable credential for a call that might be denied or later reused without evaluation.
+The Provider Adapter MUST obtain or attach a downstream credential for a call only after that call is cleared for dispatch, and only for that call.
 
 ##### RTR-27 Credential custody
 
