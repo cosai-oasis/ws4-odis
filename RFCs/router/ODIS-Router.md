@@ -320,7 +320,7 @@ The downstream credential SHOULD be as narrow as the tool's access system allows
 
 *Core; L2-12*
 
-A Bridge token bound to the agent's key can be used only by the agent, so the provider adapter MUST NOT present it to another identity provider. The adapter MUST instead request the downstream credential on its own credential, naming the agent and principal the Router verified, unless the issuer explicitly allows the adapter to exchange a derivative of the Bridge token bound to another key. In the first case the downstream identity provider relies on the adapter's statement and MUST trust the adapter for that purpose. In both cases the agent's key stays with the agent. Where the tool's access system supports it, the downstream credential MUST be bound to the component that presents it.
+The Provider Adapter MUST NOT present an agent's key-bound Bridge token to another identity provider, since it cannot prove possession of the agent's key. It obtains downstream credentials on its own identity (ODIS-L2-12).
 
 ##### RTR-30 Egress mode
 
@@ -348,7 +348,7 @@ Rate limits depend on activity across calls. Authority limits cap the use of del
 
 *Core; L3-03*
 
-ODIS requires limits on agents, especially for destructive operations. Each limit MUST define what is counted, over what period, and which key shares the count (Table 1). A limit may count all calls, a class of operations such as payments, or a quantity such as the total amount paid, over a window such as a minute, hour, or day.
+Each limit MUST define what is counted, over what period, and which key shares the count (Table 1). A limit may count all calls, a class of operations such as payments, or a quantity such as the total amount paid, over a window such as a minute, hour, or day. A deployment MAY apply several windows to the same count, such as per minute and per day, so a burst within a long window is also bounded.
 
 ##### RTR-34 Destructive classification
 
