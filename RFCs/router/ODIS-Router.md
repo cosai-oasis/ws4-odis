@@ -91,10 +91,10 @@ The agent chooses the requested tool, operation, and arguments. The Router treat
 Wherever it runs, a Router sits between the model's instructions and the agent's actions: every governed action passes through it. A Router can run beside an agent, in a gateway, or in front of a tool. A deployment can use several Routers on one path, and each Router can consult several decision sources ([2.1.9](#219-composition-and-coverage)). Placement depends on:
 
 - **Isolation:** nothing the model controls can reach the Router's code, configuration, keys, or the downstream credentials it uses (RTR-01). A separate protected component beside the agent can satisfy this.
-- **Visibility:** a Router can enforce only rules for which it sees the needed facts.
+- **Visibility:** a Router can apply a rule only if it sees the facts the rule needs. Without them it denies (RTR-03), which still enforces the rule but also blocks calls the rule would allow.
 - **Coverage:** organization-wide rules belong on paths used by all agents; agent-specific rules can run near that agent (RTR-46).
 
-| Position | Can observe | May lack |
+| Position | Can observe | Might lack |
 |---|---|---|
 | Beside the agent | Each call, its sequence within a task, and the agent's declared purpose (unverified) | Other agents' activity and proof that no alternate tool path exists |
 | Gateway | Calls to tools behind it and totals across those agents | The agent's internal reason for a call |
