@@ -191,25 +191,25 @@ For a call carrying a Bridge token, the Router MUST check (1) a valid signature 
 
 *Core; §6.4*
 
-Before requesting a decision, the Router MUST determine (1) the operation type: a tool invocation, resource read, prompt fetch, or other operation the binding supports; (2) the service that will handle the call, identified through trusted routing information, with the attributes policy can depend on, such as owner and region; (3) the tool or endpoint and the action it performs; (4) every resource the call affects: the data the operation reads or changes, such as a record, file, or collection, identified by URI. For example, the invoice an argument identifies, or the destination collection of a create operation. Where the affected records are known only when the operation runs, such as a search or a server-side bulk update, the resource is the named collection or scope the operation can reach; and (5) the gateway entry point or namespace, if present, because a deployment can grant access to different virtual servers. For a web API, the Router uses the method, address, and relevant fields. Policy MUST be evaluated against the resolved target, not the caller-visible name.
+Before requesting a decision, the Router MUST determine the resolved target: the operation, the service and tool that will handle it, the resources it affects, and the gateway entry point or namespace, if any. Where the affected records are known only when the operation runs, such as a search, the resource is the collection or scope the operation can reach. Policy MUST be evaluated against the resolved target, not the caller-visible name.
 
 ##### RTR-13 Resolution sources
 
 *Core; §6.4*
 
-When the Router runs in the gateway, the gateway's routing configuration MUST determine both the target evaluated and the target invoked. If they run separately, the gateway MUST provide a trusted mapping or a signed statement of the target resolved for each call. In either case, the evaluated target MUST match the actual destination. The gateway MAY choose among instances of that service after the decision, but only instances with the evaluated attributes that also meet any constraint the decision imposes, such as region. A trusted tool or service registry MAY supplement that mapping. Protocol-specific bindings define how calls map to policy actions and resources, including which arguments identify resources or matter to the decision. The agent supplies the name and arguments but MUST NOT supply the mapping used to interpret them; otherwise it could present a sensitive call as a harmless one.
+The target policy evaluates MUST be the target the call reaches. It comes from the gateway's routing configuration or, where the Router runs separately, from a trusted mapping or signed statement the gateway provides; a trusted registry MAY supplement it. The agent supplies the name and arguments, never the mapping used to interpret them. After the decision, the gateway MAY choose among instances of that service only if they have the evaluated attributes and meet the decision's constraints, such as region.
 
 ##### RTR-14 Resolution failure
 
 *Core; §6.4*
 
-The Router MUST deny a call if it cannot resolve the name, server, or affected resources, or if resolution would require an unknown target or a wildcard. It MUST NOT substitute a wildcard for resources it cannot identify or infer a safe target from incomplete information. A named, bounded collection is not a wildcard.
+The Router MUST deny a call whose target or affected resources it cannot resolve. It MUST NOT treat an unidentified resource as a wildcard; a named, bounded collection, such as one folder, is not a wildcard.
 
 ##### RTR-15 Target attributes
 
 *Core; §6.4*
 
-Policies can use a target's owner, data sensitivity, or storage location. Each attribute MUST record its source and verification status, and SHOULD record its observation time and validity period. Registry attributes from a trusted source are verified. A tool's self-description, such as a read-only label, counts as verified only where the deployment trusts the tool's provider (RTR-34); otherwise the Router MAY pass it to the policy engine as an unverified input.
+Target attributes the Router supplies, such as owner, data sensitivity, or storage location, MUST record their source and verification status, and SHOULD record their observation time and validity period. Registry attributes from a trusted source are verified. A tool's self-description, such as a read-only label, counts as verified only where the deployment trusts the tool's provider (RTR-34); otherwise the Router MAY pass it to the policy engine as an unverified input.
 
 #### 2.1.4 Policy request
 
@@ -217,19 +217,17 @@ Policies can use a target's owner, data sensitivity, or storage location. Each a
 
 *Core; L3-06, §6.4*
 
-After verifying the caller and resolving the target, the Router MUST send the policy engine a decision request ([Section 3.1](#31-policy-request)) carrying facts the Router established and identifying any unverified inputs. The Router MUST check each risk signal's source, freshness, and subject, and otherwise mark it unverified. The policy engine need not parse Agent Runtime Credentials, Bridge tokens, or their supporting proof.
+After verifying the caller and resolving the target, the Router MUST send the policy engine a request conforming to [Section 3.1](#31-policy-request), built from verified attributes and marking any unverified input. Raw credentials, tokens, private keys, and secrets MUST NOT be sent.
 
-##### RTR-17 Policy input declaration
+##### RTR-17 Optional inputs
 
 *Core; CC-07*
 
-A deployment MUST publish a policy input declaration ([Section 3.3](#33-policy-input-declaration)) for each policy engine. A test can then check that each request contains only required fields and declared optional inputs.
+Every request carries the required fields of [Section 3.1](#31-policy-request). Optional inputs, such as arguments, the delegation chain, the task description, or the software digest, can be sensitive and MUST be sent only when the engine's policy input declaration ([Section 3.3](#33-policy-input-declaration)), part of the deployment's configuration, names them. If a required input is unavailable or cannot meet its declared verification level, the Router MUST deny the call.
 
 ##### RTR-18 Input minimization
 
-*Core; CC-07*
-
-The Router MUST include the required fields and only the optional inputs needed for the decision, as named in the engine's policy input declaration. Arguments, the delegation chain, the task description, and the software digest can contain sensitive information and MUST be sent only when declared. Raw credentials, private keys, and secrets MUST NOT be sent. If a required input is unavailable or cannot meet its declared verification level, the Router MUST deny the call.
+*Merged into RTR-17.*
 
 #### 2.1.5 Decisions
 
@@ -237,7 +235,7 @@ The Router MUST include the required fields and only the optional inputs needed 
 
 *Core; L3-06, §6.4*
 
-The policy engine MUST return one of the outcomes in [Section 3.4](#34-policy-response). They MUST remain distinct for audit and operations, because a policy refusal and an evaluation failure require different responses. A policy that allows by default MUST return `permit` when no rule matches; `not_applicable` stops the call.
+The policy engine MUST return one of the outcomes in [Section 3.4](#34-policy-response). They MUST remain distinct for audit and operations, because a policy refusal and an evaluation failure require different responses. The Router treats `not_applicable` as a refusal; a deployment that wants to allow by default expresses it in policy as an explicit `permit`.
 
 ##### RTR-20 Enforceable permit
 
@@ -616,7 +614,7 @@ Principal attributes, target attributes, and risk signals carry each fact as an 
 
 ### 3.3 Policy input declaration
 
-The deployment publishes one declaration per policy engine (RTR-17). It names:
+The deployment configures one declaration per policy engine (RTR-17). It names:
 
 - the optional fields the engine receives;
 - the argument paths it receives, such as `amount` or `payment.currency`, which let the Router select individual arguments;
@@ -840,7 +838,7 @@ References identify the affected requirements or ODIS issues.
 - **Sessions:** Sessions are referred to where they matter but are not yet defined by ODIS. What defines a session, how is it identified for limits, revocation, and audit, and what does terminating one involve (L3-04)? ([Section 3.7](#37-authority-limit-keys), [Section 3.8](#38-revocation-levels), RTR-50; #25)
 - **Client application identity:** A coding assistant or similar application can sign in separately from the agent and principal. Should its identity appear in the policy request, marked unverified until ODIS defines a check? (Section 3.1; #13)
 - **Sandbox identity:** Should a sandbox and the agents or sub-agents it hosts have separate identities? Which identity does the Router verify? (RTR-04)
-- **Default arguments:** Should a minimum set of call arguments always reach the policy engine, rather than only those declared by a policy? (RTR-18)
+- **Default arguments:** Should a minimum set of call arguments always reach the policy engine, rather than only those declared by a policy? (RTR-17)
 - **Delegation history:** The field table recommends delegation depth and sends the full chain only when declared. Should depth or organizational hops be required by default? (Section 3.1)
 - **Common obligations:** Should ODIS define common obligation types with fixed handling for approval, field removal, and notification, while leaving their details to deployments? This could make policies portable without standardizing a full vocabulary. ODIS does not currently define a standard list. (RTR-54)
 - **Policy-engine chaining:** The Router stops on a final `not_applicable` response. Is it acceptable for deployments to finish chaining engines before returning one response to the Router? (RTR-19)
@@ -911,7 +909,7 @@ References identify the affected requirements or ODIS issues.
 
 **Resource.** The data a call reads or changes, identified by URI, such as a record, file, or collection. Not the server or tool that handles the call, and not the MCP operation of the same name. Granted authority (`authority.resources`) can name a broader resource that contains it.
 
-**Resolved target.** The actual server, operation, and resources determined by the Router, including the tool when applicable.
+**Resolved target.** The actual server, operation, and resources determined by the Router, including the tool when applicable and the gateway entry point or namespace, if any.
 
 **Revocation.** Ending trust in a token, delegation, session, agent or principal before its lifetime runs out.
 
