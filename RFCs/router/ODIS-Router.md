@@ -102,7 +102,7 @@ Wherever it runs, a Router sits between the model's instructions and the agent's
 
 In any of these forms, a Router at the agent has to meet RTR-01; in-process, that rules out agents with tools that run code or write files unless keys and credentials are held outside the process.
 
-A gateway is a useful starting point for organization-wide policy because it is outside the agent's control and sees traffic to the tools behind it. Agent-specific and tool-specific rules might require additional Routers.
+A gateway is a useful starting point for organization-wide policy because it is outside the agent's control and sees traffic to the tools behind it. It does not see tools that run locally, such as file, shell, or code-execution tools, so governing those needs a Router at the agent (RTR-02). Agent-specific and tool-specific rules might also require additional Routers.
 
 ### 1.4 Threats addressed
 
