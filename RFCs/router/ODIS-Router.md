@@ -100,7 +100,7 @@ Wherever it runs, a Router sits between the model's instructions and the agent's
 | Gateway | Calls to tools behind it and totals across those agents | The agent's internal reason for a call |
 | In front of the tool | Effects on the tool's data, result size, and local access rules | Delegation context unless forwarded |
 
-In any of these forms, a Router at the agent has to meet RTR-01; in-process, that rules out agents with tools that run code or write files unless keys and credentials are held outside the process.
+In any of these forms, a Router at the agent has to meet RTR-01; in-process, that means tools that run code or write files are sandboxed away from it.
 
 A gateway is a useful starting point for organization-wide policy because it is outside the agent's control and sees traffic to the tools behind it. It does not see tools that run locally, such as file, shell, or code-execution tools, so governing those needs a Router at the agent (RTR-02). Agent-specific and tool-specific rules might also require additional Routers.
 
@@ -135,7 +135,7 @@ The key words MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are to be interpreted 
 
 *Core; §3.3*
 
-The Router MUST be outside the agent's control: the agent, and anything the model can influence (tools that run code or write files, plugins loaded into the agent's process, and any memory or file those can reach), MUST NOT be able to read the Router's keys or the downstream credentials it uses, or alter the Router's code, configuration, or state. Content an agent reads can contain instructions that redirect its behavior (prompt injection), so nothing the model can influence can be trusted to enforce policy. A Router inside the agent's process often cannot meet this, but an embedded check can if the agent has no such tools and keys and credentials are held outside the process.
+The Router MUST be outside the agent's control: the agent, and anything the model can influence (tools that run code or write files, plugins loaded into the agent's process, and any memory or file those can reach), MUST NOT be able to read the Router's keys or the downstream credentials it uses, or alter the Router's code, configuration, or state. Content an agent reads can contain instructions that redirect its behavior (prompt injection), so nothing the model can influence can be trusted to enforce policy. A check inside the agent's process can meet this if nothing the model can influence reaches it: tools that run code or write files are sandboxed away from the check's code, configuration, and keys, and no code the model can cause to load runs in that process. Holding keys and credentials in a separate process, such as a sidecar that attaches them, adds protection if a tool can read the agent's memory or environment.
 
 ##### RTR-02 No bypass
 
