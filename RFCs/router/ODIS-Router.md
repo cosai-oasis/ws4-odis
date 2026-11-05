@@ -185,12 +185,6 @@ For a call carrying a Bridge token, the Router MUST check (1) a valid signature 
 
 *Merged into RTR-06.*
 
-##### RTR-11 Single-use tokens
-
-*Core*
-
-A single-use token MUST be consumed by exactly one component on the call path. The deployment MUST identify that component; other components MUST verify the token without consuming it, so they do not reject it as a replay.
-
 #### 2.1.3 Target resolution
 
 ##### RTR-12 Resolved target
@@ -408,6 +402,12 @@ A Router MAY consult a policy engine, rate-limit service, fraud check, or other 
 *Extended; L3-02, L3-08*
 
 A call MUST proceed only if every Router on its path permits it. Each Router MUST verify the call and apply its own policies; another Router's permit MUST NOT replace its decision. Each Router MUST record its own outcome, including a denial that prevents the call from reaching later Routers.
+
+##### RTR-11 Single-use tokens
+
+*Core*
+
+Where several components on one path see a single-use token, such as a one-time approval or a proof with a replay identifier, exactly one MUST consume it and the others MUST verify it without consuming it; otherwise the first would accept the call and the next reject it as a replay. The deployment MUST identify the consuming component.
 
 ##### RTR-46 Policy coverage
 
