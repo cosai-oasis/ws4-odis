@@ -151,8 +151,6 @@ The Router MUST deny the call if it cannot establish any required fact, complete
 
 #### 2.1.2 Caller verification
 
-Before seeking a policy decision, the Router establishes the caller's identity and authority and verifies that the caller is the credential holder. Some facts are checked when a token is issued; others on every call.
-
 ##### RTR-04 Required facts
 
 *Core; L1-09, L2-13*
@@ -203,8 +201,6 @@ A single-use token MUST be consumed by exactly one component on the call path. T
 
 #### 2.1.3 Target resolution
 
-The Router resolves a call to its actual target before requesting a policy decision, so that the decision covers the operation and resources that will be reached.
-
 ##### RTR-12 Resolved target
 
 *Core; §6.4*
@@ -251,8 +247,6 @@ The Router MUST include the required fields and only the optional inputs needed 
 
 #### 2.1.5 Decisions
 
-The Router acts on a policy decision only for the call evaluated and while that decision remains valid.
-
 ##### RTR-19 Decision outcomes
 
 *Core; L3-06, §6.4*
@@ -296,8 +290,6 @@ A permit MUST authorize at most one dispatch, and only within its validity perio
 When the policy engine runs as a separate service, the Router and the engine MUST authenticate each other and protect the integrity of the request and response in transit between them. An in-process engine shares the Router's trust boundary.
 
 #### 2.1.6 Hand-off to the Provider Adapter
-
-Most tools require a credential issued for their own access system, such as an OAuth token, cloud role, or API key, rather than an ODIS token. These requirements cover when the Provider Adapter can act for a call and what the Router requires of it. The adapter's own behaviour is specified by ODIS-L2-08, L2-10 and L2-15.
 
 ##### RTR-26 Decision before credential
 
@@ -343,8 +335,6 @@ The Provider Adapter MUST record each exchange with the call's `evaluation_id`, 
 
 #### 2.1.7 Authority limits
 
-Rate limits depend on activity across calls. Authority limits cap the use of delegated authority; load protection ([RTR-61](#rtr-61-load-protection)) is separate.
-
 ##### RTR-33 Limit definition
 
 *Core; L3-03*
@@ -382,8 +372,6 @@ Router instances enforcing the same limit MUST share counters, and counts MUST s
 Repeated breaches of an authority limit MAY lead a deployment to block the offending delegation or agent ([RTR-63](#rtr-63-router-initiated-revocation)). Breaches of load-protection limits (RTR-61), where used, MUST NOT, since their keys are not verified.
 
 #### 2.1.8 Revocation
-
-Revocation ends trust before a token expires. It can stop one decision, a delegation, a session, an agent, or activity on a principal's behalf.
 
 ##### RTR-39 Change timing
 
@@ -443,8 +431,6 @@ If host operators can disable controls on the agent's machine, every protected p
 
 #### 2.1.10 Dependencies
 
-The Router needs trusted keys, revocation data, routing information, policy decisions, and state to handle a call.
-
 ##### RTR-48 Freshness bounds
 
 *Core; L2-11, L3-04*
@@ -487,8 +473,6 @@ Audit records MUST NOT be used as policy inputs, and logging settings MUST NOT c
 
 #### 2.2.1 Obligations
 
-An obligation is a condition attached to a permit ([Section 3.5](#35-obligation)). Its stage determines whether the Router can dispatch the call, release its result, or commit to follow-up work.
-
 ##### RTR-54 Obligation support
 
 *no profile; §6.4*
@@ -514,8 +498,6 @@ The call proceeds, but the Router MUST withhold the result until the condition i
 The Router MUST perform the follow-up work, such as notification or retention. Before dispatch, it MUST secure a durable commitment to that work, for example in a queue that survives a restart; if it cannot, the call MUST be denied.
 
 #### 2.2.2 Discovery
-
-Tool lists shape what an agent can attempt and reveal what a deployment offers. These requirements apply when discovery passes through the Router.
 
 ##### RTR-58 Authority filtering
 
