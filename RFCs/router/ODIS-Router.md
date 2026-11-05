@@ -88,17 +88,19 @@ The agent chooses the requested tool, operation, and arguments. The Router treat
 
 ### 1.3 Placement
 
-Wherever it runs, a Router sits between the model's instructions and the agent's actions: every governed action passes through it. A Router can run beside an agent, in a gateway, or in front of a tool. A deployment can use several Routers on one path, and each Router can consult several decision sources ([2.1.9](#219-composition-and-coverage)). Placement depends on:
+Wherever it runs, a Router sits between the model's instructions and the agent's actions: every governed action passes through it. A Router can run at the agent, in a gateway, or in front of a tool. A deployment can use several Routers on one path, and each Router can consult several decision sources ([2.1.9](#219-composition-and-coverage)). Placement depends on:
 
-- **Isolation:** nothing the model controls can reach the Router's code, configuration, keys, or the downstream credentials it uses (RTR-01). A separate protected component beside the agent can satisfy this.
+- **Isolation:** nothing the model controls can reach the Router's code, configuration, keys, or the downstream credentials it uses (RTR-01). A separate protected component can satisfy this, and so can an in-process one under the conditions in RTR-01.
 - **Visibility:** a Router can apply a rule only if it sees the facts the rule needs. Without them it denies (RTR-03), which still enforces the rule but also blocks calls the rule would allow.
 - **Coverage:** organization-wide rules belong on paths used by all agents; agent-specific rules can run near that agent (RTR-46).
 
 | Position | Can observe | Might lack |
 |---|---|---|
-| Beside the agent | Each call, its sequence within a task, and the agent's declared purpose (unverified) | Other agents' activity and proof that no alternate tool path exists |
+| At the agent: an in-process hook, sidecar, or local proxy | Each call, the sequence of calls within a task (trajectory), and the agent's stated reason for a call (unverified) | Other agents' activity and proof that no alternate tool path exists |
 | Gateway | Calls to tools behind it and totals across those agents | The agent's internal reason for a call |
 | In front of the tool | Effects on the tool's data, result size, and local access rules | Delegation context unless forwarded |
+
+In any of these forms, a Router at the agent has to meet RTR-01; in-process, that rules out agents with tools that run code or write files unless keys and credentials are held outside the process.
 
 A gateway is a useful starting point for organization-wide policy because it is outside the agent's control and sees traffic to the tools behind it. Agent-specific and tool-specific rules might require additional Routers.
 
@@ -944,7 +946,7 @@ References identify the affected requirements or ODIS issues.
 
 **Trust domain.** Systems under one administrative authority that trust the same issuers, often but not always one organization.
 
-**Unverified input.** A value the Router passes to the policy engine without having established it, such as an agent's declared purpose or a tool's self-description, marked so the engine can weigh it.
+**Unverified input.** A value the Router passes to the policy engine without having established it, such as an agent's stated reason for a call or a tool's self-description, marked so the engine can weigh it.
 
 **Verified attribute.** A value the Router takes from a verified Bridge token, the resolved target, or its own records, never from the agent's request.
 
