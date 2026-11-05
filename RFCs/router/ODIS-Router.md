@@ -161,7 +161,7 @@ For each call, the Router MUST establish (1) the agent and its running instance,
 
 *Core; L1-09*
 
-The Router MUST verify that the caller holds the private key the token is bound to, for example a proof signed with that key (DPoP or a WIMSE Workload Proof Token), an HTTP Message Signature, or a mutually authenticated TLS connection bound to the token. A copied token alone MUST NOT be accepted. The caller is the component that holds the key and presents the request: the agent's runtime, or in the sidecar and SDK patterns ([ODIS §7.2](../ODIS.md#72-deployment-patterns)) the isolated presenter (L2-13). Where the Router is a separate hop, the presenter proves possession to it on that hop. Where the Router runs inside the presenter, isolation from the agent (RTR-01) takes the place of that proof.
+The Router MUST verify that the caller holds the private key the token is bound to; a copied token alone MUST NOT be accepted. The caller is the component that presents the request: the agent's runtime, or an isolated presenter (ODIS-L2-12, L2-13). Where the Router runs inside the presenter, isolation from the agent (RTR-01) takes the place of that proof.
 
 ##### RTR-06 Bridge token checks
 
