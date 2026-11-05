@@ -106,13 +106,16 @@ A gateway is a useful starting point for organization-wide policy because it is 
 
 ### 1.4 Threats addressed
 
-- Forged agent identity or authority.
-- Access through an alias that policy does not cover.
-- New or split sessions used to evade limits or detection.
-- Replay of stale tokens or decisions.
-- Forwarding a request different from the one evaluated.
-- Direct tool access that bypasses the Router.
-- A host operator disabling a Router on the agent's machine (RTR-47).
+| Risk | Mitigation |
+|---|---|
+| An agent presents forged identity or authority, or a copied token. | Bridge token checks and proof of possession (RTR-05, RTR-06). |
+| A call reaches a tool through an alias that policy does not cover. | Policy evaluates the resolved target, and aliases share limits (RTR-12, RTR-13, RTR-36). |
+| New or split sessions are used to evade limits or detection. | Limits keyed by agent, delegation and principal, not only session (RTR-36, [Section 3.7](#37-authority-limit-keys)). |
+| A stale token or decision is replayed. | Per-call checks, single-use tokens and permits, evaluation identifiers (RTR-10, RTR-11, RTR-22, RTR-24). |
+| The Router forwards a request different from the one evaluated. | Dispatch must match the evaluated call (RTR-23). |
+| The agent reaches a tool directly, bypassing the Router. | No bypass, and the agent never holds downstream credentials (RTR-02, RTR-27). |
+| Content the agent reads redirects it (prompt injection). | Nothing the model influences can alter the Router, and every call is decided (RTR-01, RTR-20). |
+| A host operator disables a Router on the agent's machine. | An independently administered Router on every protected path (RTR-47). |
 
 ## 2. Requirements
 
