@@ -111,7 +111,7 @@ A gateway is a useful starting point for organization-wide policy because it is 
 | An agent presents forged identity or authority, or a copied token. | Bridge token checks and proof of possession (RTR-05, RTR-06). |
 | A call reaches a tool through an alias that policy does not cover. | Policy evaluates the resolved target, and aliases share limits (RTR-12, RTR-13, RTR-36). |
 | New or split sessions are used to evade limits or detection. | Limits keyed by agent, delegation and principal, not only session (RTR-36, [Section 3.7](#37-authority-limit-keys)). |
-| A stale token or decision is replayed. | Per-call checks, single-use tokens and permits, evaluation identifiers (RTR-10, RTR-11, RTR-22, RTR-24). |
+| A stale token or decision is replayed. | Proof of possession, expiry, single-use tokens and permits, evaluation identifiers (RTR-05, RTR-06, RTR-11, RTR-22, RTR-24). |
 | The Router forwards a request different from the one evaluated. | Dispatch must match the evaluated call (RTR-23). |
 | The agent reaches a tool directly, bypassing the Router. | No bypass, and the agent never holds downstream credentials (RTR-02, RTR-27). |
 | Content the agent reads redirects it (prompt injection). | Nothing the model influences can alter the Router, and every call is decided (RTR-01, RTR-20). |
@@ -167,7 +167,7 @@ The Router MUST verify that the caller holds the private key the token is bound 
 
 *Core; L2-13, L3-02*
 
-For a call carrying a Bridge token, the Router MUST check (1) a valid signature from a Bridge configured as trusted, (2) expiry and revocation status, (3) an audience that includes the Router or the target tool, (4) proof of possession of the bound key (RTR-05), and (5) that the call is within the token's task and resource limits. What the Bridge checked at issuance, the token's binding and lifetime, and acceptance of another organization's credentials are the Bridge's obligations (Passport RFC BRG-09, BRG-13, BRG-14, BRG-16); the Router relies on them only from a Bridge configured as trusted.
+For a call carrying a Bridge token, the Router MUST check (1) a valid signature from a Bridge configured as trusted, (2) expiry, and revocation status where the deployment's tokens can outlive its declared revocation delay (RTR-43), (3) an audience that includes the Router or the target tool, (4) proof of possession of the bound key (RTR-05), and (5) that the call is within the token's task and resource limits. What the Bridge checked at issuance, the token's binding and lifetime, and acceptance of another organization's credentials are the Bridge's obligations (Passport RFC BRG-09, BRG-13, BRG-14, BRG-16); the Router relies on them only from a Bridge configured as trusted.
 
 ##### RTR-07 Bridge token issuance
 
@@ -183,9 +183,7 @@ For a call carrying a Bridge token, the Router MUST check (1) a valid signature 
 
 ##### RTR-10 Per-call checks
 
-*Core; L3-04*
-
-Expiry, revocation, and the principal's continuing authority can change after issuance, so the Router MUST check them on every call. Revocation data MAY be cached within the deployment's declared revocation delay.
+*Merged into RTR-06.*
 
 ##### RTR-11 Single-use tokens
 
@@ -389,7 +387,7 @@ The Router MAY receive signed revocation events, fetch signed revocation lists, 
 
 *Core; L3-04*
 
-The Router MUST check revocation (1) at token verification, rejecting a revoked caller before policy evaluation; (2) before obtaining a downstream credential and again as the final step before sending the call, because approval or other work might have delayed dispatch after the first check; and (3) before releasing a result, withholding it if authority was revoked. For a stream, the Router MUST check again at intervals no longer than the declared revocation delay, and MUST stop further release once authority is revoked or its revocation data is older than that delay (RTR-43). The tool action cannot be undone, and data already released cannot be recalled. No further check is needed after the call, but after-call obligations still run for actions already taken.
+Where the Router checks revocation (RTR-43), it MUST do so (1) at token verification, rejecting a revoked caller before policy evaluation; (2) before obtaining a downstream credential and again as the final step before sending the call, because approval or other work might have delayed dispatch after the first check; and (3) before releasing a result, withholding it if authority was revoked. For a stream, the Router MUST check again at intervals no longer than the declared revocation delay, and MUST stop further release once authority is revoked or its revocation data is older than that delay (RTR-43). The tool action cannot be undone, and data already released cannot be recalled. No further check is needed after the call, but after-call obligations still run for actions already taken.
 
 ##### RTR-43 Stale revocation data
 
