@@ -167,25 +167,19 @@ The Router MUST verify that the caller holds the private key the token is bound 
 
 *Core; L2-13, L3-02*
 
-For a call carrying a Bridge token, the Router MUST check (1) a valid signature from a Bridge configured as trusted, (2) expiry and revocation status, (3) an audience that includes the Router or the target tool, (4) proof of possession of the bound key, and (5) that the call is within the token's task and resource limits.
+For a call carrying a Bridge token, the Router MUST check (1) a valid signature from a Bridge configured as trusted, (2) expiry and revocation status, (3) an audience that includes the Router or the target tool, (4) proof of possession of the bound key (RTR-05), and (5) that the call is within the token's task and resource limits. What the Bridge checked at issuance, the token's binding and lifetime, and acceptance of another organization's credentials are the Bridge's obligations (Passport RFC BRG-09, BRG-13, BRG-14, BRG-16); the Router relies on them only from a Bridge configured as trusted.
 
 ##### RTR-07 Bridge token issuance
 
-*Core; L1-05, L3-04, §6.3*
-
-For a Bridge token to stand in for the Agent Runtime Credential, the Bridge MUST carry the credential issuer's results the Router needs in its signed token, MUST bind the token to the same private key as that credential, and MUST set the token to expire no later than it. Revoking the credential MUST also revoke tokens derived from it. The Router can then verify Bridge tokens without parsing Agent Runtime Credentials.
+*Moved to the Passport RFC (BRG-09, BRG-13, BRG-14).*
 
 ##### RTR-08 Issuance-time checks
 
-*Core; L1-02, L2-06, L2-14*
-
-At issuance, the credential issuer checks that the agent's software was approved, and the Bridge checks that the Agent Runtime Credential is genuine and that each delegation passed on no more authority than it received. The Router MAY rely on those results only in a token from a Bridge configured as trusted.
+*Moved to the Passport RFC (BRG-02, BRG-04) and ODIS-L2-06.*
 
 ##### RTR-09 Cross-organization calls
 
-*Extended; L1-07*
-
-For a call from another organization, the receiving organization's Bridge MUST check the incoming credentials and delegations and issue its own token. The Router MUST still rely only on a Bridge it trusts.
+*Moved to the Passport RFC (BRG-16).*
 
 ##### RTR-10 Per-call checks
 
@@ -854,7 +848,7 @@ References identify the affected requirements or ODIS issues.
 - **Policy-engine chaining:** The Router stops on a final `not_applicable` response. Is it acceptable for deployments to finish chaining engines before returning one response to the Router? (RTR-19)
 - **Decisions across Routers:** May one Router pass a signed decision to another instead of each deciding independently? How would the decision be protected and bound to the call? (RTR-45)
 - **Evaluation coverage:** Must every call pass through a Router? Within a Router every call is decided (RTR-20), but no current ODIS profile requires a Router on every path: L3-02 is a SHOULD in Extended. (#23)
-- **Credential issuer:** Does the Passport (PR #39) or a Verifier in the Bridge (PR #40) appraise evidence against the registration record and issue the Agent Runtime Credential? The Router input is unchanged either way. (RTR-07, RTR-08; #33)
+- **Credential issuer:** Does the Passport (PR #39) or a Verifier in the Bridge (PR #40) appraise evidence against the registration record and issue the Agent Runtime Credential? The Router input is unchanged either way. (RTR-06, Passport RFC BRG-01; #33)
 - **Profile tags:** The profile tags in Section 2 are provisional. Which requirements belong in Core, Extended, and Safety?
 
 ## Glossary
