@@ -141,13 +141,13 @@ The Router MUST be outside the agent's control: the agent, and anything the mode
 
 *Core; L3-08*
 
-The agent MUST NOT be able to bypass the Router on the way to a tool. A path around the Router makes every other requirement moot.
+The agent MUST NOT be able to bypass the Router on the way to a tool. Tools that run locally, such as file and shell tools, never reach a gateway, so a deployment MUST either govern them with a Router at the agent or exclude them from coverage (RTR-46).
 
 ##### RTR-03 Fail closed
 
 *Core; L2-01, L2-13*
 
-The Router MUST deny the call if it cannot establish any required fact, complete a required check, or interpret an input, including when revocation data is unavailable. An incomplete check MUST NOT permit a call.
+The Router MUST deny the call if it cannot establish any required fact, complete a required check, or interpret an input, including when revocation data the deployment relies on is unavailable. An incomplete check MUST NOT permit a call.
 
 #### 2.1.2 Caller verification
 
@@ -413,7 +413,7 @@ The Router MUST check revocation (1) at token verification, rejecting a revoked 
 
 *Core; L3-04*
 
-If current revocation data is unavailable, the Router MAY rely on cached data only within the declared delay. Once it is older, the Router MUST stop accepting affected tokens until the data is refreshed (RTR-49).
+If current revocation data is unavailable, the Router MAY rely on cached data only within the declared delay. Once it is older, the Router MUST stop accepting affected tokens until the data is refreshed (RTR-49). A deployment whose tokens live no longer than its declared revocation delay can rely on expiry and needs no revocation source.
 
 #### 2.1.9 Composition and coverage
 
