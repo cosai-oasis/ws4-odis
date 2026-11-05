@@ -155,7 +155,7 @@ The Router MUST deny the call if it cannot establish any required fact, complete
 
 *Core; L1-09, L2-13*
 
-For each call, the Router MUST establish (1) the agent and its running instance, (2) the principal for whom it acts, (3) its authority for this call, and (4) that the caller holds the agent's private key. ODIS does not require a particular artifact to carry these facts, provided the Router can verify them.
+For each call, the Router MUST establish (1) the agent and its running instance, (2) the principal for whom it acts, and (3) its authority for this call, and MUST verify that the caller is the credential holder (RTR-05). ODIS does not require a particular artifact to carry these facts, provided the Router can verify them.
 
 ##### RTR-05 Proof of possession
 
