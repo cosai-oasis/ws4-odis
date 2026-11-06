@@ -2,7 +2,7 @@
 
 ## Summary
 
-ODIS divides agent access across three layers. The [Passport](../ODIS.md#31-layer-1--the-passport-identity--attestation) establishes the agent's software and running instance, from which a short-lived Agent Runtime Credential bound to that instance is issued; the [Bridge](../ODIS.md#32-layer-2--the-bridge-delegation--access) records who the agent acts for and what authority it holds, and carries that authority to downstream systems; the [Router](../ODIS.md#33-layer-3--the-router-discovery--governance) governs discovery of, and calls to, tools and services. This document specifies how the Router evaluates and enforces each call.
+ODIS divides agent access across three layers. The [Passport](../ODIS.md#31-layer-1--the-passport-identity--attestation) establishes the agent's software and running instance, and a short-lived Agent Runtime Credential bound to that instance is issued by the credential issuer (the Passport, or a Verifier in the Bridge as the Passport RFC proposes); the [Bridge](../ODIS.md#32-layer-2--the-bridge-delegation--access) records who the agent acts for and what authority it holds, and carries that authority to downstream systems; the [Router](../ODIS.md#33-layer-3--the-router-discovery--governance) governs discovery of, and calls to, tools and services. This document specifies how the Router evaluates and enforces each call.
 
 ## Scope
 
@@ -135,13 +135,13 @@ The key words MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are to be interpreted 
 
 *Core; §3.3*
 
-The Router MUST be outside the agent's control: the agent, and anything the model can influence (tools that run code or write files, plugins loaded into the agent's process, and any memory or file those can reach), MUST NOT be able to read the Router's keys or the downstream credentials it uses, or alter the Router's code, configuration, or state. Content an agent reads can contain instructions that redirect its behavior (prompt injection), so nothing the model can influence can be trusted to enforce policy. A check inside the agent's process can meet this if nothing the model can influence reaches it: tools that run code or write files are sandboxed away from the check's code, configuration, and keys, and no code the model can cause to load runs in that process. Holding keys and credentials in a separate process, such as a sidecar that attaches them, adds protection if a tool can read the agent's memory or environment.
+The Router MUST be outside the agent's control: the agent, and anything the model can influence (tools that run code or write files, plugins loaded into the agent's process, and any memory or file those can reach), MUST NOT be able to read the Router's keys or the downstream credentials it uses, or alter the Router's code, configuration, or state. Content an agent reads can contain instructions that redirect its behavior (prompt injection), so nothing the model can influence can be trusted to enforce policy. A check inside the agent's process can meet this if nothing the model can influence reaches it: tools that run code or write files are sandboxed away from the check's code, configuration, and keys, and no code the model can cause to load runs in that process. Holding keys and credentials in a separate process, such as a sidecar that attaches them, adds protection if a tool can read the agent's memory or environment. An in-process check counts toward RTR-02 only where it meets this and, for Core, the validation ODIS requires of the embedded SDK pattern ([ODIS §9.3](../ODIS.md#93-limitations)).
 
 ##### RTR-02 No bypass
 
 *Core; L3-08*
 
-The agent MUST NOT be able to bypass the Router on the way to a tool. Tools that run locally, such as file and shell tools, never reach a gateway, so a deployment MUST either govern them with a Router at the agent or exclude them from coverage (RTR-46).
+On every path the deployment declares covered (RTR-46), the agent MUST NOT be able to bypass the Router on the way to a tool. Tools that run locally, such as file and shell tools, never reach a gateway, so a deployment MUST either govern them with a Router at the agent or exclude them from coverage (RTR-46).
 
 ##### RTR-03 Fail closed
 
@@ -361,7 +361,7 @@ Repeated breaches of an authority limit MAY lead a deployment to block the offen
 
 *Core; L3-04*
 
-Routine changes, such as approving new software or changing role permissions, MAY wait until short-lived credentials are renewed but MUST take effect within one renewal period; this avoids mass reissuance after broad configuration changes. Urgent changes, such as suspension, agent compromise, or withdrawal of a principal's permission, MUST propagate through revocation events, and components relying on affected tokens MUST act within the deployment's declared delay. ODIS limits that delay to 300 seconds within a trust domain. The events might also need to reach other organizations that trust the agent.
+Routine changes, such as approving new software or changing role permissions, MAY wait until short-lived credentials are renewed, but only where credentials renew within the declared revocation delay; otherwise a change that reduces authority MUST propagate as a revocation. Urgent changes, such as suspension, agent compromise, or withdrawal of a principal's permission, MUST propagate through revocation events, and components relying on affected tokens MUST act within the deployment's declared delay. ODIS limits that delay to 300 seconds within a trust domain. The events might also need to reach other organizations that trust the agent.
 
 ##### RTR-40 Revocation levels
 
@@ -544,6 +544,12 @@ Deployments needing strong assurance MUST make later alteration or deletion of r
 *no profile; L2-13*
 
 A deployment MAY configure the Router to set an argument from a verified attribute, overriding any value the agent supplied, such as a tool's `on_behalf_of` from the verified principal, or to normalize an argument to the tool's declared schema by a declared, deterministic rule. Binding MUST run before evaluation, so the policy request and dispatch both use the bound call, MUST NOT change the operation or add arguments other than bound ones, and MUST be recorded in the decision record. Selecting the service or instance that handles the call is target resolution (RTR-12, RTR-13), not binding.
+
+##### RTR-67 Result source labels
+
+*no profile*
+
+The Router SHOULD label each result with its resolved source and whether that source is trusted, so the agent's harness can treat untrusted content accordingly. Inspecting the content is not required; an obligation can require it (RTR-56).
 
 ## 3. Schemas and reference tables
 
@@ -843,7 +849,7 @@ References identify the affected requirements or ODIS issues.
 - **Common obligations:** Should ODIS define common obligation types with fixed handling for approval, field removal, and notification, while leaving their details to deployments? This could make policies portable without standardizing a full vocabulary. ODIS does not currently define a standard list. (RTR-54)
 - **Policy-engine chaining:** The Router stops on a final `not_applicable` response. Is it acceptable for deployments to finish chaining engines before returning one response to the Router? (RTR-19)
 - **Decisions across Routers:** May one Router pass a signed decision to another instead of each deciding independently? How would the decision be protected and bound to the call? (RTR-45)
-- **Evaluation coverage:** Must every call pass through a Router? Within a Router every call is decided (RTR-20), but no current ODIS profile requires a Router on every path: L3-02 is a SHOULD in Extended. (#23)
+- **Evaluation coverage:** Must every call pass through a Router? Within a Router every call is decided (RTR-20), but no current ODIS profile requires a Router on every path: L3-02 is a SHOULD in Extended. Should L3-02 be required at Core for destructive or high-impact operations? RTR-02 applies to declared paths meanwhile. (#23, #43)
 - **Credential issuer:** Does the Passport (PR #39) or a Verifier in the Bridge (PR #40) appraise evidence against the registration record and issue the Agent Runtime Credential? The Router input is unchanged either way. (RTR-06, Passport RFC BRG-01; #33)
 - **Profile tags:** The profile tags in Section 2 are provisional. Which requirements belong in Core, Extended, and Safety?
 
