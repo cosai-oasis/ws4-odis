@@ -457,7 +457,7 @@ The Bridge records its grant, the Router its decision, the provider adapter the 
 
 *Core; CC-01*
 
-Audit records MUST NOT be used as policy inputs, and logging settings MUST NOT change authority. The deployment MUST declare whether a durable record is required before irreversible effects (RTR-64). Where it is not, the Router MAY proceed when a write fails and MUST report the recording gap.
+Audit records MUST NOT be read as policy inputs, and logging settings MUST NOT change authority. A profile or risk score derived from them, such as by anomaly detection, MAY reach policy as a risk signal from a declared source, subject to the same checks as any other signal (RTR-16). The deployment MUST declare whether a durable record is required before irreversible effects (RTR-64). Where it is not, the Router MAY proceed when a write fails and MUST report the recording gap.
 
 ### 2.2 Optional
 
